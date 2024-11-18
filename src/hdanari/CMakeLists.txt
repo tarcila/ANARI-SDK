@@ -37,6 +37,10 @@ set(OPENUSD_PLUGIN_INSTALL_PREFIX
 )
 
 add_subdirectory(rd)
+option(BUILD_HDANARI_SDR "Build OpenUSD SDR plugin (MDL support for standalone HdAnari)" OFF)
+if (BUILD_HDANARI_SDR)
+  add_subdirectory(sdr)
+endif()
 
 # Conditionally install a main plugInfo.json file
 # Rational is the following: If OPENUSD_INSTALL_DIR is set to the main OpenUSD folder
