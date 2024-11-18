@@ -4,6 +4,7 @@
 #include "material.h"
 #include "material/matte.h"
 #include "material/physicallyBased.h"
+#include "material/mdl.h"
 
 #include "renderDelegate.h"
 #include "renderParam.h"
@@ -163,6 +164,11 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
           materialNetworkIface, HdMaterialTerminalTokens->surface);
       break;
     }
+    case HdAnariRenderParam::MaterialType::Mdl: {
+      primvars_ = {};
+      textures_ = {};
+      break;
+    }
     }
 
     // Build primvar mapping so we can load the texture and configure the
@@ -196,8 +202,17 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
           device_, materialNetworkIface, attributes_, primvars_, samplers_);
       break;
     }
-    default:
+    case HdAnariRenderParam::MaterialType::Mdl: {
+      // We don't use a material network here. To get MDL to correctly be processed by USD,
+      // we'd need to get the USDShade graph to be processed and mapped using correctly
+      // registered SDR nodes.
+      // Bruteforce the thing but considering:
+      // - A single node graph, made of a self contained MDL material
+      // - map all inputs to their counterpart on the ANARI material
+      // Should be enough as a first iteration.
+      material_ = HdAnariMdlMaterial::GetOrCreateMaterial(device_, sceneDelegate, this);
       break;
+    }
     }
   }
 

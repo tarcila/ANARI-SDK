@@ -48,6 +48,7 @@ class HdAnariRenderParam final : public HdRenderParam
   {
     Matte,
     PhysicallyBased,
+    Mdl,
   };
 
   HdAnariRenderParam(anari::Device device,

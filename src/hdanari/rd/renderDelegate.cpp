@@ -65,7 +65,7 @@ static void hdAnariDeviceStatusFunc(const void *,
     fprintf(stderr, "[ANARI][PERF ] %s\n", message);
   else if (severity == ANARI_SEVERITY_INFO)
     fprintf(stderr, "[ANARI][INFO ] %s\n", message);
-#if 0
+#if 1
   else if (severity == ANARI_SEVERITY_DEBUG)
     fprintf(stderr, "[ANARI][DEBUG] %s\n", message);
 #endif
@@ -113,7 +113,7 @@ void HdAnariRenderDelegate::Initialize()
   _settingDescriptors.resize(2);
   _settingDescriptors[0] = {"Ambient Radiance",
       HdAnariRenderSettingsTokens->ambientRadiance,
-      VtValue(0.2f)};
+      VtValue(1.0f)};
   _settingDescriptors[1] = {"Ambient Color",
       HdAnariRenderSettingsTokens->ambientColor,
       VtValue(GfVec3f(0.8f, 0.8f, 0.8f))};
@@ -128,11 +128,15 @@ void HdAnariRenderDelegate::Initialize()
   auto extensions = anariGetDeviceExtensions(library, "default");
   bool hasANARI_KHR_DEVICE_SYNCHRONIZATION = false;
   bool hasANARI_KHR_MATERIAL_PHYSICALLY_BASED = false;
+  bool hasANARI_VISRTX_MATERIAL_MDL = false;
   for (auto e = extensions; *e; ++e) {
+    fprintf(stderr, "  check for extension %s\n", *e);
     if ("ANARI_KHR_DEVICE_SYNCHRONIZATION"sv == *e)
       hasANARI_KHR_DEVICE_SYNCHRONIZATION = true;
     if ("ANARI_KHR_MATERIAL_PHYSICALLY_BASED"sv == *e)
       hasANARI_KHR_MATERIAL_PHYSICALLY_BASED = true;
+    if ("ANARI_VISRTX_MATERIAL_MDL"sv == *e)
+      hasANARI_VISRTX_MATERIAL_MDL = true;
   }
 
   if (!hasANARI_KHR_DEVICE_SYNCHRONIZATION) {
@@ -149,8 +153,9 @@ void HdAnariRenderDelegate::Initialize()
     return;
   }
 
-  HdAnariRenderParam::MaterialType materialType =
-      hasANARI_KHR_MATERIAL_PHYSICALLY_BASED
+  HdAnariRenderParam::MaterialType materialType = hasANARI_VISRTX_MATERIAL_MDL
+      ? HdAnariRenderParam::MaterialType::Mdl
+      : hasANARI_KHR_MATERIAL_PHYSICALLY_BASED
       ? HdAnariRenderParam::MaterialType::PhysicallyBased
       : HdAnariRenderParam::MaterialType::Matte;
   _renderParam = std::make_shared<HdAnariRenderParam>(device, materialType);
@@ -355,6 +360,21 @@ HdBprim *HdAnariRenderDelegate::CreateFallbackBprim(TfToken const &typeId)
 void HdAnariRenderDelegate::DestroyBprim(HdBprim *bPrim)
 {
   delete bPrim;
+}
+
+TfToken HdAnariRenderDelegate::GetMaterialBindingPurpose() const
+{
+  return HdTokens->full;
+}
+
+TfTokenVector HdAnariRenderDelegate::GetMaterialRenderContexts() const
+{
+  return {HdAnariMaterialTokens->mdl, UsdShadeTokens->universalRenderContext};
+}
+
+TfTokenVector HdAnariRenderDelegate::GetShaderSourceTypes() const
+{
+  return {HdAnariMaterialTokens->mdl, UsdShadeTokens->universalRenderContext};
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

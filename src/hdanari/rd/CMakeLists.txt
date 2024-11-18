@@ -11,6 +11,7 @@ project_add_library(SHARED
   instancer.cpp
   material.cpp
   material/matte.cpp
+  material/mdl.cpp
   material/physicallyBased.cpp
   material/textureLoader.cpp
   material/usdPreviewSurfaceConverter.cpp
