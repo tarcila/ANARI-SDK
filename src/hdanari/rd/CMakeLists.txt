@@ -26,8 +26,8 @@ project_add_library(SHARED
   sampler.cpp
 )
 
-option(USE_INSTANCE_ARRAYS "Toggle on the use of instance arrays" OFF)
-if (USE_INSTANCE_ARRAYS)
+option(HDANARI_USE_INSTANCE_ARRAYS "Toggle on the use of instance arrays" OFF)
+if (HDANARI_USE_INSTANCE_ARRAYS)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "USE_INSTANCE_ARRAYS=1")
 else()
   target_compile_definitions(${PROJECT_NAME} PRIVATE "USE_INSTANCE_ARRAYS=0")
