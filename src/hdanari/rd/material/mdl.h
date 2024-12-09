@@ -15,6 +15,10 @@ struct HdAnariMdlMaterial final
 
   static anari::Material CreateMaterial(anari::Device device, const HdMaterialNetwork2Interface &materialNetworkIface);
 
+  static HdAnariMaterial::PrimvarMapping EnumeratePrimvars(
+      const HdMaterialNetwork2Interface &materialNetworkInterface,
+      TfToken terminal);
+
   static void SyncMaterialParameters(
     anari::Device device,
     anari::Material material,

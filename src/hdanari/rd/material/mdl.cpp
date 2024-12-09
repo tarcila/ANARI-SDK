@@ -65,6 +65,9 @@ void HdAnariMdlMaterial::ProcessMdlNode(anari::Device device,
             anari::setParameter(device, material, name.GetText(), value.UncheckedGet<int>());
         } else if (value.IsHolding<float>()) {
             anari::setParameter(device, material, name.GetText(), value.UncheckedGet<float>());
+        } else if (value.IsHolding<GfVec3f>()) {
+            auto v = value.UncheckedGet<GfVec3f>();
+            anari::setParameter<float[3]>(device, material, name.GetText(), {v[0], v[1], v[2]});
         } else if (value.IsHolding<TfToken>()) {
             auto s = value.UncheckedGet<TfToken>().GetString();
             static constexpr const auto colorSpacePrefix = "colorSpace:"sv;
@@ -90,6 +93,26 @@ void HdAnariMdlMaterial::ProcessMdlNode(anari::Device device,
 
     }
     std::cout << ">>> MATERIAL PARAMETERS" << std::endl;
+}
+
+HdAnariMaterial::PrimvarMapping
+HdAnariMdlMaterial::EnumeratePrimvars(
+    const HdMaterialNetwork2Interface &materialNetworkIface, TfToken terminal)
+{
+  auto con = materialNetworkIface.GetTerminalConnection(terminal);
+  if (!con.first) {
+    TF_CODING_ERROR("Cannot find a surface terminal on prim %s",
+        materialNetworkIface.GetMaterialPrimPath().GetText());
+    return {};
+  }
+
+  // Fake it so we are mapping primvars:st on the mesh to attribute0.
+  // FIXME: Find out how to map more than one texture coordinate. Maybe by checking for
+  // some primvar role if any?
+  TfToken terminalNode = con.second.upstreamNodeName;
+  TfToken terminalNodeType = materialNetworkIface.GetNodeType(terminalNode);
+
+  return {{materialNetworkIface.GetMaterialPrimPath(), TfToken("st")}};
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

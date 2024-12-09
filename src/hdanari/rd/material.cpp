@@ -175,7 +175,8 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
     case HdAnariRenderParam::MaterialType::Mdl: {
       material_ = HdAnariMdlMaterial::CreateMaterial(device_, materialNetworkIface);
-      primvars_ = {};
+      primvars_ = HdAnariMdlMaterial::EnumeratePrimvars(
+          materialNetworkIface, HdMaterialTerminalTokens->surface);;
       textures_ = {};
       break;
     }
