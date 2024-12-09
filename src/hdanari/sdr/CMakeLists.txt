@@ -6,14 +6,13 @@ project(hdanari_sdr LANGUAGES CXX)
 project_add_library(SHARED
   debugCodes.cpp
   mdlDiscoveryPlugin.cpp
+  mdlNodes.cpp
   mdlParserPlugin.cpp
-  mdlRegistry.cpp
   tokens.cpp
 )
 
-find_package(mdl REQUIRED)
 project_link_libraries(
-  PRIVATE mdl::mdl_sdk
+  PRIVATE hdanari_mdl mdl::mdl_sdk
 )
 
 set_target_properties(${PROJECT_NAME}

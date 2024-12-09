@@ -3,14 +3,12 @@
 
 #pragma once
 
-#include "api.h"
-
 #include <pxr/pxr.h>
 #include <pxr/usd/ndr/parserPlugin.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-class HDANARI_SDR_API HdAnariMdlParserPlugin : public NdrParserPlugin
+class HdAnariMdlParserPlugin : public NdrParserPlugin
 {
 public:
     /// Takes the specified `NdrNodeDiscoveryResult` instance, which was a
@@ -34,6 +32,8 @@ public:
     /// declared under `GetDiscoveryTypes()`, and those types are collectively
     /// identified as one "source type".
     const TfToken& GetSourceType() const override;
+private:
+    
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

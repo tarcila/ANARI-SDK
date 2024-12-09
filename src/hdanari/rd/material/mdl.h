@@ -12,11 +12,18 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 struct HdAnariMdlMaterial final
 {
-  static anari::Material GetOrCreateMaterial(anari::Device device,
-      HdSceneDelegate *sceneDelegate,
-      HdAnariMaterial* materialPrim);
 
-  static void ProcessUsdPreviewSurfaceNode(anari::Device device,
+  static anari::Material CreateMaterial(anari::Device device, const HdMaterialNetwork2Interface &materialNetworkIface);
+
+  static void SyncMaterialParameters(
+    anari::Device device,
+    anari::Material material,
+    const HdMaterialNetwork2Interface &materialNetworkIface,
+    const HdAnariMaterial::PrimvarBinding &primvarBinding,
+    const HdAnariMaterial::PrimvarMapping &primvarMapping,
+    const HdAnariMaterial::SamplerMapping &samplerMapping);
+
+  static void ProcessMdlNode(anari::Device device,
       anari::Material material,
       const HdMaterialNetwork2Interface &materialNetworkIface,
       TfToken terminal,

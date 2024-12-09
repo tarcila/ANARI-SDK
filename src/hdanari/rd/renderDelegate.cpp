@@ -5,6 +5,10 @@
 #include "materialTokens.h"
 #include "renderParam.h"
 
+#ifdef HDANARI_ENABLE_MDL
+#include "mdl/mdlRegistry.h"
+#endif
+
 #include <anari/anari.h>
 #include <anari/frontend/anari_enums.h>
 #include <pxr/base/gf/vec3f.h>
@@ -130,7 +134,6 @@ void HdAnariRenderDelegate::Initialize()
   bool hasANARI_KHR_MATERIAL_PHYSICALLY_BASED = false;
   bool hasANARI_VISRTX_MATERIAL_MDL = false;
   for (auto e = extensions; *e; ++e) {
-    fprintf(stderr, "  check for extension %s\n", *e);
     if ("ANARI_KHR_DEVICE_SYNCHRONIZATION"sv == *e)
       hasANARI_KHR_DEVICE_SYNCHRONIZATION = true;
     if ("ANARI_KHR_MATERIAL_PHYSICALLY_BASED"sv == *e)
@@ -145,6 +148,11 @@ void HdAnariRenderDelegate::Initialize()
   }
 
   auto device = anari::newDevice(library, "default");
+#ifdef HDANARI_ENABLE_MDL
+  if (auto mdlRegistryInstance = HdAnariMdlRegistry::GetInstance()) {
+    anari::setParameter(device, device, "ineuray", ANARI_VOID_POINTER, mdlRegistryInstance->getINeuray());
+  }
+#endif
 
   anari::unloadLibrary(library);
 

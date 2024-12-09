@@ -3,14 +3,12 @@
 
 #pragma once
 
-#include "api.h"
-
 #include <pxr/pxr.h>
 #include <pxr/usd/ndr/discoveryPlugin.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-class HDANARI_SDR_API HdAnariMdlDiscoveryPlugin final : public NdrDiscoveryPlugin
+class HdAnariMdlDiscoveryPlugin final : public NdrDiscoveryPlugin
 {
 public:
     HdAnariMdlDiscoveryPlugin() = default;

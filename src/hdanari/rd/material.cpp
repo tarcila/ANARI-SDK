@@ -129,6 +129,17 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
   auto hdAnariRenderParam = static_cast<HdAnariRenderParam *>(renderParam);
 
   if ((*dirtyBits & HdMaterial::DirtyResource)) {
+    if (material_) {
+        // Forcing rprims to have a dirty material id to re-evaluate
+        // their material state as we don't know which rprims are bound to
+        // this one. We can skip this invalidation the first time this
+        // material is Sync'd since any affected Rprim should already be
+        // marked with a dirty material id.
+        HdChangeTracker& changeTracker =
+                         sceneDelegate->GetRenderIndex().GetChangeTracker();
+        changeTracker.MarkAllRprimsDirty(HdChangeTracker::DirtyMaterialId);
+    }
+
     //  Find material network and store it as HdMaterialNetwork2 for later use.
     VtValue networkMapResource = sceneDelegate->GetMaterialResource(GetId());
     HdMaterialNetworkMap networkMap =
@@ -145,26 +156,25 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     switch (hdAnariRenderParam->GetMaterialType()) {
     case HdAnariRenderParam::MaterialType::Matte: {
-      // Enumerate primvars
+      // Create support material, enumerate primvars and textures
+      material_ = HdAnariMatteMaterial::CreateMaterial(device_, materialNetworkIface);
       primvars_ = HdAnariMatteMaterial::EnumeratePrimvars(
           materialNetworkIface, HdMaterialTerminalTokens->surface);
-
-      // Enumerate textures and load them, releasing previously used one
       textures_ = HdAnariMatteMaterial::EnumerateTextures(
           materialNetworkIface, HdMaterialTerminalTokens->surface);
       break;
     }
     case HdAnariRenderParam::MaterialType::PhysicallyBased: {
-      // Enumerate primvars
+      // Create support material, enumerate primvars and textures
+      material_ = HdAnariPhysicallyBasedMaterial::CreateMaterial(device_, materialNetworkIface);
       primvars_ = HdAnariPhysicallyBasedMaterial::EnumeratePrimvars(
           materialNetworkIface, HdMaterialTerminalTokens->surface);
-
-      // Enumerate textures and load them, releasing previously used one
       textures_ = HdAnariPhysicallyBasedMaterial::EnumerateTextures(
           materialNetworkIface, HdMaterialTerminalTokens->surface);
       break;
     }
     case HdAnariRenderParam::MaterialType::Mdl: {
+      material_ = HdAnariMdlMaterial::CreateMaterial(device_, materialNetworkIface);
       primvars_ = {};
       textures_ = {};
       break;
@@ -185,32 +195,21 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     // syncs. Load new textures and release unused ones...
     ReleaseSamplers(device_, samplers_);
     samplers_ = CreateSamplers(device_, textures_);
-
-    // Actually create the material. Release a possible previous instance.
-    if (material_)
-      anari::release(device_, material_);
-    material_ = {};
-
+  
     switch (hdAnariRenderParam->GetMaterialType()) {
     case HdAnariRenderParam::MaterialType::Matte: {
-      material_ = HdAnariMatteMaterial::GetOrCreateMaterial(
-          device_, materialNetworkIface, attributes_, primvars_, samplers_);
+      // FIXME: ANARI material get recreated each time a parameter is changed. This is WRONG.
+      HdAnariMatteMaterial::SyncMaterialParameters(
+          device_, material_, materialNetworkIface, attributes_, primvars_, samplers_);
       break;
     }
     case HdAnariRenderParam::MaterialType::PhysicallyBased: {
-      material_ = HdAnariPhysicallyBasedMaterial::GetOrCreateMaterial(
-          device_, materialNetworkIface, attributes_, primvars_, samplers_);
+      HdAnariPhysicallyBasedMaterial::SyncMaterialParameters(
+          device_, material_, materialNetworkIface, attributes_, primvars_, samplers_);
       break;
     }
     case HdAnariRenderParam::MaterialType::Mdl: {
-      // We don't use a material network here. To get MDL to correctly be processed by USD,
-      // we'd need to get the USDShade graph to be processed and mapped using correctly
-      // registered SDR nodes.
-      // Bruteforce the thing but considering:
-      // - A single node graph, made of a self contained MDL material
-      // - map all inputs to their counterpart on the ANARI material
-      // Should be enough as a first iteration.
-      material_ = HdAnariMdlMaterial::GetOrCreateMaterial(device_, sceneDelegate, this);
+      HdAnariMdlMaterial::SyncMaterialParameters(device_, material_, materialNetworkIface, attributes_, primvars_, samplers_);
       break;
     }
     }
@@ -261,16 +260,17 @@ HdAnariMaterial::PrimvarBinding HdAnariMaterial::BuildPrimvarBinding(
   PrimvarBinding primvarBinding;
 
   static const auto bindingNames = std::map<TfToken, TfToken>{
-      {HdTokens->points, TfToken("position")},
-      {HdTokens->normals, TfToken("normal")},
-      {HdTokens->displayColor, TfToken("color")},
-      {HdTokens->displayOpacity, TfToken("opacity")},
+    {HdTokens->points, TfToken("position")},
+    {HdTokens->normals, TfToken("normal")},
+    {HdTokens->displayColor, TfToken("color")},
+    {HdTokens->displayOpacity, TfToken("opacity")},
   };
 
-  static const auto attributes = std::array{TfToken("attribute0"),
-      TfToken("attribute1"),
-      TfToken("attribute2"),
-      TfToken("attribute3")};
+  static const auto attributes = std::array{
+    TfToken("attribute0"),
+    TfToken("attribute1"),
+    TfToken("attribute2"),
+    TfToken("attribute3")};
 
   int nextIndex = 0;
   for (const auto &pvm : primvarNames) {

@@ -3,9 +3,10 @@
 
 #pragma once
 
+#include <anari/anari_cpp.hpp>
+
 #include <pxr/imaging/hio/image.h>
 #include <pxr/usd/sdf/assetPath.h>
-#include <anari/anari_cpp.hpp>
 
 #include <array>
 
