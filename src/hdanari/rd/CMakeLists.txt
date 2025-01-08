@@ -45,10 +45,7 @@ if(HDANARI_ENABLE_MDL)
   project_compile_definitions(
     PRIVATE HDANARI_ENABLE_MDL
   )
-  project_link_libraries(PRIVATE hdanari_mdl
-    mdl::dds
-    mdl::nv_openimageio
-  )
+  project_link_libraries(PRIVATE hdanari_mdl)
 endif()
 
 ## Configure plugInfo file ##

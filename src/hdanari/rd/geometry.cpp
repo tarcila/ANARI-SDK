@@ -212,6 +212,10 @@ void HdAnariGeometry::Sync(HdSceneDelegate *sceneDelegate,
   if (*dirtyBits & HdChangeTracker::DirtyMaterialId) {
     HdAnariMaterial *material = static_cast<HdAnariMaterial *>(
         renderIndex.GetSprim(HdPrimTypeTokens->material, GetMaterialId()));
+        fprintf(stderr, "setting mesh %s material to %s (anari %p)\n",
+          GetId().GetText(), GetMaterialId().GetText(),
+            material ? material->GetAnariMaterial() : nullptr
+          );
     if (auto mat = material ? material->GetAnariMaterial() : nullptr) {
       anari::setParameter(_anari.device,
           _anari.surface,

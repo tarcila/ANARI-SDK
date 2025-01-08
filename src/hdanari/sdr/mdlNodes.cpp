@@ -242,6 +242,9 @@ SdrShaderPropertyUniquePtr MdlFunctionSdrNode::createTextureInputProperty(
 NdrPropertyUniquePtrVec MdlFunctionSdrNode::GetShaderProperties(const NdrNodeDiscoveryResult& discoveryResult,
         const mi::neuraylib::IFunction_definition* functionDefinition, mi::neuraylib::ITransaction* transaction) {
     NdrPropertyUniquePtrVec properties;
+
+    return properties;
+
     // handle return type
     auto returnType = mi::base::make_handle(functionDefinition->get_return_type());
 

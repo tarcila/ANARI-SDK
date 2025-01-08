@@ -6,6 +6,12 @@
 #include <pxr/usd/sdr/registry.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/pxr.h>
+#include <pxr/base/gf/vec2f.h>
+#include <pxr/base/gf/vec3f.h>
+#include <pxr/base/gf/vec4f.h>
+#include <pxr/base/gf/vec2i.h>
+#include <pxr/base/gf/vec3i.h>
+#include <pxr/base/gf/vec4i.h>
 #include <pxr/usd/sdf/path.h>
 
 #include <iostream>
@@ -55,19 +61,47 @@ void HdAnariMdlMaterial::ProcessMdlNode(anari::Device device,
     anari::setParameter(device, material, "source", uri);
     anari::setParameter(device, material, "sourceType", "module");
 
-    std::cout << "<<< MATERIAL PARAMETERS" << std::endl;
+    std::cout << "<<< MATERIAL PARAMETERS for " << materialNetworkIface.GetMaterialPrimPath().GetString() << std::endl;
+    fprintf(stderr, "  anari material pointer %p\n", material);
     for (auto name: materialNetworkIface.GetAuthoredNodeParameterNames(terminal)) {
-        std::cout << "Processing " << name.GetString() << std::endl;
-        auto value = materialNetworkIface.GetNodeParameterValue(terminal, name);
+        auto nodeName = terminal;
+        auto inputName = name;
+
+        std::cout << "Processing " << nodeName.GetString() << ":" << inputName.GetString() << std::endl;
+
+        auto cnxs = materialNetworkIface.GetNodeInputConnection(terminal, name);
+        if (cnxs.size()) {
+            auto cnx = cnxs.front();
+            nodeName = cnx.upstreamNodeName;
+            inputName = cnx.upstreamOutputName;
+            std::cout << "  connected to " << nodeName.GetString() << ":" << inputName.GetString() << std::endl;
+        }
+
+        auto value = materialNetworkIface.GetNodeParameterValue(nodeName, inputName);
         if (value.IsHolding<bool>()) {
             anari::setParameter(device, material, name.GetText(), value.UncheckedGet<bool>());
         } else if (value.IsHolding<int>()) {
             anari::setParameter(device, material, name.GetText(), value.UncheckedGet<int>());
+        } else if (value.IsHolding<GfVec2i>()) {
+            auto v = value.UncheckedGet<GfVec2i>();
+            anari::setParameter<int[2]>(device, material, name.GetText(), {v[0], v[1]});
+        } else if (value.IsHolding<GfVec3i>()) {
+            auto v = value.UncheckedGet<GfVec3i>();
+            anari::setParameter<int[3]>(device, material, name.GetText(), {v[0], v[1], v[2]});
+        } else if (value.IsHolding<GfVec4i>()) {
+            auto v = value.UncheckedGet<GfVec4i>();
+            anari::setParameter<int[4]>(device, material, name.GetText(), {v[0], v[1], v[2], v[3]});
         } else if (value.IsHolding<float>()) {
             anari::setParameter(device, material, name.GetText(), value.UncheckedGet<float>());
+        } else if (value.IsHolding<GfVec2f>()) {
+            auto v = value.UncheckedGet<GfVec2f>();
+            anari::setParameter<float[2]>(device, material, name.GetText(), {v[0], v[1]});
         } else if (value.IsHolding<GfVec3f>()) {
             auto v = value.UncheckedGet<GfVec3f>();
             anari::setParameter<float[3]>(device, material, name.GetText(), {v[0], v[1], v[2]});
+        } else if (value.IsHolding<GfVec4f>()) {
+            auto v = value.UncheckedGet<GfVec4f>();
+            anari::setParameter<float[4]>(device, material, name.GetText(), {v[0], v[1], v[2], v[3]});
         } else if (value.IsHolding<TfToken>()) {
             auto s = value.UncheckedGet<TfToken>().GetString();
             static constexpr const auto colorSpacePrefix = "colorSpace:"sv;
@@ -77,15 +111,20 @@ void HdAnariMdlMaterial::ProcessMdlNode(anari::Device device,
             anari::setParameter(device, material, name.GetText(), s);
         } else if (value.IsHolding<SdfAssetPath>()) {
             auto s = value.UncheckedGet<SdfAssetPath>().GetResolvedPath();
-            fprintf(stderr, " Setting %s to resolved %s (from %s)\n", name.GetText(), s.c_str(), value.UncheckedGet<SdfAssetPath>().GetAssetPath().c_str());
-          // FIXME: Workaround dds for now...
-          
-          if (auto p = s.find(".dds"sv); p != std::string::npos) {
-            s.replace(p, 4, ".png");
-            fprintf(stderr, " We hit a .dds, try and find a .png instead\n");
-          }
-
-          anari::setParameter(device, material, name.GetText(), s);
+            if (s.empty()) {
+                s = value.UncheckedGet<SdfAssetPath>().GetAssetPath();
+            }
+            if (s.empty()) {
+                fprintf(stderr, "Skipping empty texture for %s\n", name.GetText());
+            } else {
+                fprintf(stderr, " Setting %s to resolved %s (from %s)\n", name.GetText(), s.c_str(), value.UncheckedGet<SdfAssetPath>().GetAssetPath().c_str());
+                // FIXME: Workaround dds for now...
+                if (auto p = s.find(".dds"sv); p != std::string::npos) {
+                    fprintf(stderr, " We hit a .dds, try and find a .png instead\n");
+                    s.replace(p, 4, ".png");
+                }
+                anari::setParameter(device, material, name.GetText(), s);
+            }
         } else {
             std::cout << "  Don't know how to handle " << name.GetString() << " of type " << 
                 value.GetTypeName() << std::endl;

@@ -117,6 +117,7 @@ class HdAnariGeometry : public HdMesh
     anari::Device device{nullptr};
     anari::Geometry geometry{nullptr};
     anari::Surface surface{nullptr};
+    std::vector<anari::Surface> geomSubsetSurface{};
     anari::Group group{nullptr};
 #if USE_INSTANCE_ARRAYS
     anari::Instance instance{nullptr};

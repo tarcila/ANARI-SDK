@@ -3,14 +3,12 @@
 
 project(hdanari_mdl LANGUAGES CXX)
 
-find_package(mdl REQUIRED)
-
 project_add_library(SHARED
   mdlRegistry.cpp
 )
 
 project_link_libraries(
-  PUBLIC mdl::mdl_sdk
+  PUBLIC MDL_SDK::MDL_SDK
 )
 
 project_include_directories(

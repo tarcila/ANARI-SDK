@@ -12,7 +12,7 @@ project_add_library(SHARED
 )
 
 project_link_libraries(
-  PRIVATE hdanari_mdl mdl::mdl_sdk
+  PRIVATE hdanari_mdl MDL_SDK::MDL_SDK
 )
 
 set_target_properties(${PROJECT_NAME}

@@ -38,7 +38,7 @@ set(OPENUSD_PLUGIN_INSTALL_PREFIX
 
 option(HDANARI_ENABLE_MDL "Enable MDL support for HdAnari" ON)
 if(HDANARI_ENABLE_MDL)
-  find_package(mdl REQUIRED)
+  find_package(MDL_SDK REQUIRED)
   add_subdirectory(mdl)
   option(HDANARI_BUILD_SDR "Build OpenUSD SDR plugin (MDL material discovery suppport for standalone HdAnari)" ON)
   if (HDANARI_BUILD_SDR)
