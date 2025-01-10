@@ -11,6 +11,7 @@
 #include <pxr/base/vt/value.h>
 #include <pxr/imaging/hd/changeTracker.h>
 #include <pxr/imaging/hd/enums.h>
+#include <pxr/imaging/hd/geomSubset.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/tokens.h>
 #include <pxr/imaging/hd/types.h>
@@ -47,12 +48,13 @@ HdDirtyBits HdAnariPoints::GetInitialDirtyBitsMask() const
   return mask;
 }
 
-HdAnariMaterial::PrimvarBinding HdAnariPoints::UpdateGeometry(
+HdAnariGeometry::GeomSpecificPrimvars HdAnariPoints::GetGeomSpecificPrimvars(
     HdSceneDelegate *sceneDelegate,
     HdDirtyBits *dirtyBits,
     const TfToken::Set &allPrimvars,
-    const VtValue &points)
+    const VtVec3fArray &points)
 {
+#if 0
   // Sphere radii //
   if (HdChangeTracker::IsDirty(HdChangeTracker::DirtyWidths)) {
     if (const auto &widthsVt = sceneDelegate->Get(GetId(), HdTokens->widths);
@@ -71,15 +73,16 @@ HdAnariMaterial::PrimvarBinding HdAnariPoints::UpdateGeometry(
           HdAnariTokens->radius, HdAnariTokens->vertexRadius, VtValue());
     }
   }
-
+#endif
   return {};
 }
 
-void HdAnariPoints::UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
+HdAnariGeometry::PrimvarSource HdAnariPoints::UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
     HdInterpolation interpolation,
     const TfToken &attributeName,
     const VtValue &value)
 {
+#if 0
   switch (interpolation) {
   case HdInterpolationConstant: {
     _SetGeometryAttributeConstant(attributeName, value);
@@ -103,6 +106,9 @@ void HdAnariPoints::UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
   default:
     break;
   }
+#else
+  return {};
+#endif
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

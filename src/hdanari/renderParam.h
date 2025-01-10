@@ -66,6 +66,8 @@ class HdAnariRenderParam final : public HdRenderParam
   int SceneVersion() const;
   void MarkNewSceneVersion();
 
+  std::mutex& deviceMutex() { return _mutex; }
+
  private:
   anari::Device _device{nullptr};
   anari::Material _material{nullptr};
@@ -134,7 +136,7 @@ HdAnariRenderParam::GetDefaultPrimvarBinding() const
 inline void HdAnariRenderParam::RegisterGeometry(
     const HdAnariGeometry *geometry)
 {
-  std::lock_guard<std::mutex> guard(_mutex);
+  // std::lock_guard<std::mutex> guard(_mutex);
   _geometries.push_back(geometry);
 }
 

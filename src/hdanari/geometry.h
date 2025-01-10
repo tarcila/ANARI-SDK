@@ -11,6 +11,7 @@
 #include <pxr/base/vt/value.h>
 #include <pxr/imaging/hd/enums.h>
 #include <pxr/imaging/hd/extComputationUtils.h>
+#include <pxr/imaging/hd/geomSubset.h>
 #include <pxr/imaging/hd/mesh.h>
 #include <pxr/imaging/hd/meshTopology.h>
 #include <pxr/imaging/hd/meshUtil.h>
@@ -24,12 +25,11 @@
 #include <pxr/usd/sdf/path.h>
 #include <map>
 // std
-#include <memory>
-#include <optional>
+#include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include "material.h"
-#include "meshUtil.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -58,12 +58,25 @@ class HdAnariGeometry : public HdMesh
   HdDirtyBits _PropagateDirtyBits(HdDirtyBits bits) const override;
 
  protected:
-  virtual HdAnariMaterial::PrimvarBinding UpdateGeometry(
+  struct GeomSpecificPrimVar {
+    TfToken bindingPoint;
+    anari::Array1D array;
+  };
+  using GeomSpecificPrimvars = std::vector<GeomSpecificPrimVar>;
+
+  using PrimvarSource = std::variant<
+    std::monostate,
+    GfVec4f,
+    anari::Array1D
+  >;
+
+  virtual GeomSpecificPrimvars GetGeomSpecificPrimvars(
       HdSceneDelegate *sceneDelegate,
       HdDirtyBits *dirtyBits,
       const TfToken::Set &allPrimvars,
-      const VtValue &points) = 0;
-  virtual void UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
+      const VtVec3fArray &points) { return {}; };
+
+  virtual PrimvarSource UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
       HdInterpolation interpolation,
       const TfToken &attributeName,
       const VtValue &value) = 0;
@@ -72,13 +85,16 @@ class HdAnariGeometry : public HdMesh
   TfToken _GetFaceVaryingBindingPoint(const TfToken &attribute);
   TfToken _GetVertexBindingPoint(const TfToken &attribute);
 
+  anari::Array1D _GetAttributeArray(const VtValue &v,
+      anari::DataType forcedType = ANARI_UNKNOWN);
+
   void _SetGeometryAttributeConstant(
       const TfToken &attributeName, const VtValue &v);
   void _SetGeometryAttributeArray(const TfToken &attributeName,
       const TfToken &bindingPoint,
       const VtValue &v,
       anari::DataType forcedType = ANARI_UNKNOWN);
-#if USE_INSTANCE_ARRAYS
+#if 1
   void _SetInstanceAttributeArray(const TfToken &attributeName,
       const VtValue &v,
       anari::DataType forcedType = ANARI_UNKNOWN);
@@ -86,43 +102,36 @@ class HdAnariGeometry : public HdMesh
 
   void _InitRepr(const TfToken &reprToken, HdDirtyBits *dirtyBits) override;
 
-#if !USE_INSTANCE_ARRAYS
-  void ReleaseInstances();
-#endif
+  static bool _GetVtValueAsAttribute(VtValue v, GfVec4f &out);
+  static bool _GetVtArrayBufferData(VtValue v, const void **data, size_t *size, anari::DataType *type);
 
   HdAnariGeometry(const HdAnariGeometry &) = delete;
   HdAnariGeometry &operator=(const HdAnariGeometry &) = delete;
 
+  virtual HdGeomSubsets GetGeomSubsets(HdSceneDelegate *sceneDelegate, HdDirtyBits *dirtyBits) { return {}; }
+
  private:
   // Data //
   bool _populated{false};
-  HdMeshTopology topology_;
-  std::unique_ptr<HdAnariMeshUtil> meshUtil_;
-  std::optional<Hd_VertexAdjacency> adjacency_;
 
-  VtIntArray trianglePrimitiveParams_;
+  TfToken geometryType_;
 
-  HdAnariMaterial::PrimvarBinding primvarBinding_;
-  std::map<TfToken, TfToken> geometryBindingPoints_;
-  std::map<TfToken, TfToken> instanceBindingPoints_;
+  struct GeomSubsetInfo {
+    anari::Material material;
+    HdAnariMaterial::PrimvarBinding primvarBinding;
+  };
+  GeomSubsetInfo mainGeomInfo_;
+  std::unordered_map<SdfPath, GeomSubsetInfo, SdfPath::Hash> geomSubsetsInfo_;
 
-#if !USE_INSTANCE_ARRAYS
-  VtMatrix4fArray transforms_UNIQUE_INSTANCES_;
-  VtUIntArray ids_UNIQUE_INSTANCES_;
-  std::vector<std::pair<TfToken, VtValue>> instancedPrimvar_UNIQUE_INSTANCES_;
-#endif
+  std::unordered_map<TfToken, PrimvarSource,  TfToken::HashFunctor> primvarSources_;
+  std::unordered_map<TfToken, PrimvarSource,  TfToken::HashFunctor> instancePrimvarSources_;
 
+protected:
   struct AnariObjects
   {
     anari::Device device{nullptr};
-    anari::Geometry geometry{nullptr};
-    anari::Surface surface{nullptr};
     anari::Group group{nullptr};
-#if USE_INSTANCE_ARRAYS
     anari::Instance instance{nullptr};
-#else
-    std::vector<anari::Instance> instances;
-#endif
   } _anari;
 };
 

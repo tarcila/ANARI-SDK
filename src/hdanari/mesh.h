@@ -7,8 +7,11 @@
 
 // pxr
 #include <pxr/base/tf/token.h>
+#include <pxr/base/vt/types.h>
 #include <pxr/base/vt/value.h>
 #include <pxr/imaging/hd/enums.h>
+#include <pxr/imaging/hd/geomSubset.h>
+#include <pxr/imaging/hd/renderDelegate.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/types.h>
 #include <pxr/imaging/hd/vertexAdjacency.h>
@@ -31,12 +34,20 @@ class HdAnariMesh final : public HdAnariGeometry
 
   HdDirtyBits GetInitialDirtyBitsMask() const override;
 
+  void Sync(HdSceneDelegate *sceneDelegate,
+    HdRenderParam *renderParam_,
+    HdDirtyBits *dirtyBits,
+    const TfToken& reprToken) override;
+
+  void Finalize(HdRenderParam* renderParam_) override;
+
  protected:
-  HdAnariMaterial::PrimvarBinding UpdateGeometry(HdSceneDelegate *sceneDelegate,
+  HdGeomSubsets GetGeomSubsets(HdSceneDelegate *sceneDelegate, HdDirtyBits *dirtyBits) override;
+  HdAnariGeometry::GeomSpecificPrimvars GetGeomSpecificPrimvars(HdSceneDelegate *sceneDelegate,
       HdDirtyBits *dirtyBits,
       const TfToken::Set &allPrimvars,
-      const VtValue &points) override;
-  void UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
+      const VtVec3fArray &points) override;
+  HdAnariGeometry::PrimvarSource UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
       HdInterpolation interpolation,
       const TfToken &attributeName,
       const VtValue &value) override;
@@ -49,7 +60,12 @@ class HdAnariMesh final : public HdAnariGeometry
   std::unique_ptr<HdAnariMeshUtil> meshUtil_;
   std::optional<Hd_VertexAdjacency> adjacency_;
 
+  HdGeomSubsets geomsubsets_;
+
+  VtVec3iArray triangulatedIndices_;
   VtIntArray trianglePrimitiveParams_;
+  anari::Array1D normals_{};
+  anari::Array1D triangles_{};
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

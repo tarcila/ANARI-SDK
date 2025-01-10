@@ -57,7 +57,7 @@ static void hdAnariDeviceStatusFunc(const void *,
     fprintf(stderr, "[ANARI][PERF ] %s\n", message);
   else if (severity == ANARI_SEVERITY_INFO)
     fprintf(stderr, "[ANARI][INFO ] %s\n", message);
-#if 0
+#if 1
   else if (severity == ANARI_SEVERITY_DEBUG)
     fprintf(stderr, "[ANARI][DEBUG] %s\n", message);
 #endif

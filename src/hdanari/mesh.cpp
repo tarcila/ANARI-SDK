@@ -4,6 +4,7 @@
 #include "mesh.h"
 
 #include <anari/frontend/anari_enums.h>
+#include <pxr/base/gf/vec4f.h>
 #include <pxr/base/tf/debug.h>
 #include <pxr/base/tf/diagnostic.h>
 #include <pxr/base/tf/staticData.h>
@@ -13,6 +14,7 @@
 #include <pxr/base/vt/value.h>
 #include <pxr/imaging/hd/changeTracker.h>
 #include <pxr/imaging/hd/enums.h>
+#include <pxr/imaging/hd/geomSubset.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/smoothNormals.h>
 #include <pxr/imaging/hd/tokens.h>
@@ -20,11 +22,13 @@
 #include <pxr/imaging/hd/vtBufferSource.h>
 
 #include <anari/anari_cpp.hpp>
+#include <anari/anari_cpp/anari_cpp_impl.hpp>
 #include <iterator>
+#include <mutex>
 
 #include "anariTokens.h"
-#include "debugCodes.h"
 #include "geometry.h"
+#include "renderParam.h"
 
 using namespace std::string_literals;
 
@@ -50,33 +54,57 @@ HdDirtyBits HdAnariMesh::GetInitialDirtyBitsMask() const
       | HdChangeTracker::DirtyRepr | HdChangeTracker::DirtyMaterialId;
 }
 
-HdAnariMaterial::PrimvarBinding HdAnariMesh::UpdateGeometry(
-    HdSceneDelegate *sceneDelegate,
+void HdAnariMesh::Sync(HdSceneDelegate *sceneDelegate,
+    HdRenderParam *renderParam_,
     HdDirtyBits *dirtyBits,
-    const TfToken::Set &allPrimvars,
-    const VtValue &points)
+    const TfToken & reprToken)
 {
-  // Triangle indices //
-  if (HdChangeTracker::IsTopologyDirty(*dirtyBits, GetId())) {
+  auto renderParam = static_cast<HdAnariRenderParam*>(renderParam_);
+  
+  std::scoped_lock _(renderParam->deviceMutex());
+
+    if (HdChangeTracker::IsTopologyDirty(*dirtyBits, GetId())) {
+      auto rp = static_cast<HdAnariRenderParam*>(renderParam_);
+
     topology_ = HdMeshTopology(GetMeshTopology(sceneDelegate), 0);
     meshUtil_ = std::make_unique<HdAnariMeshUtil>(&topology_, GetId());
     adjacency_.reset();
 
-    VtVec3iArray triangulatedIndices;
-    VtIntArray trianglePrimitiveParams;
     meshUtil_->ComputeTriangleIndices(
-        &triangulatedIndices, &trianglePrimitiveParams_);
+        &triangulatedIndices_, &trianglePrimitiveParams_);
 
-    if (!triangulatedIndices.empty()) {
-      _SetGeometryAttributeArray(HdAnariTokens->index,
-          HdAnariTokens->primitiveIndex,
-          VtValue(triangulatedIndices),
-          ANARI_UINT32_VEC3);
+    if (!triangulatedIndices_.empty()) {
+      fprintf(stderr, "=== Creating topology\n");
+      triangles_ = _GetAttributeArray(VtValue(triangulatedIndices_), ANARI_UINT32_VEC3);
     } else {
-      _SetGeometryAttributeArray(
-          HdAnariTokens->index, HdAnariTokens->primitiveIndex, VtValue());
+      anari::release(_anari.device, triangles_);
+      triangles_ = {};
     }
+    geomsubsets_ = topology_.GetGeomSubsets();
   }
+
+  // FIXME: Should not be an override of Sync, but a tool function returning what's needed.
+  HdAnariGeometry::Sync(sceneDelegate, renderParam_, dirtyBits, reprToken);
+}
+
+HdGeomSubsets HdAnariMesh::GetGeomSubsets(
+  HdSceneDelegate *sceneDelegate,
+  HdDirtyBits *dirtyBits
+)
+{
+  return geomsubsets_;
+}
+
+HdAnariGeometry::GeomSpecificPrimvars HdAnariMesh::GetGeomSpecificPrimvars(
+    HdSceneDelegate *sceneDelegate,
+    HdDirtyBits *dirtyBits,
+    const TfToken::Set &allPrimvars,
+    const VtVec3fArray &points)
+{
+  GeomSpecificPrimvars primvars;
+
+  // Topology
+  primvars.push_back({HdAnariTokens->primitiveIndex, triangles_});
 
   // Normals
   const auto &normals = sceneDelegate->Get(GetId(), HdTokens->normals);
@@ -85,11 +113,7 @@ HdAnariMaterial::PrimvarBinding HdAnariMesh::UpdateGeometry(
   bool doSmoothNormals = (topology_.GetScheme() != PxOsdOpenSubdivTokens->none)
       && (topology_.GetScheme() != PxOsdOpenSubdivTokens->bilinear);
 
-  if (normalIsAuthored) {
-    // Just return the binding information so that it is part of the overall
-    // primvar binding process.
-    return {{HdTokens->normals, HdAnariTokens->normal}};
-  } else if (doSmoothNormals) {
+  if (!normalIsAuthored && doSmoothNormals) {
     if (HdChangeTracker::IsTopologyDirty(*dirtyBits, GetId())
         || HdChangeTracker::IsPrimvarDirty(
             *dirtyBits, GetId(), HdTokens->points)) {
@@ -98,62 +122,117 @@ HdAnariMaterial::PrimvarBinding HdAnariMesh::UpdateGeometry(
         adjacency_->BuildAdjacencyTable(&topology_);
       }
 
-      if (TF_VERIFY(
-              points.IsHolding<VtVec3fArray>() && points.GetArraySize() > 0)) {
-        const auto &pointsArray = points.Get<VtVec3fArray>();
+      if (TF_VERIFY(std::size(points) > 0)) {
         const VtVec3fArray &normals = Hd_SmoothNormals::ComputeSmoothNormals(
-            &*adjacency_, std::size(pointsArray), std::cbegin(pointsArray));
-
-        _SetGeometryAttributeArray(HdAnariTokens->normal,
-            HdAnariTokens->vertexNormal,
-            VtValue(normals));
+            &*adjacency_, std::size(points), std::cbegin(points));
+        normals_ = _GetAttributeArray(VtValue(normals));
+        primvars.push_back({
+        HdAnariTokens->faceVaryingNormal,
+        normals_
+        });
       } else {
-        TF_RUNTIME_ERROR(
-            "Cannot find a valid points source to compute normal for %s\n",
-            GetId().GetText());
-        _SetGeometryAttributeArray(
-            HdAnariTokens->normal, HdAnariTokens->vertexNormal, VtValue());
+        if (normals_)
+          anari::release(_anari.device, normals_);
+        normals_ = {};
       }
     }
   } else {
-    _SetGeometryAttributeArray(
-        HdAnariTokens->normal, HdAnariTokens->vertexNormal, VtValue());
+    if (normals_)
+      anari::release(_anari.device, normals_);
+    normals_ = {};
   }
 
-  return {};
+  return primvars;
 }
 
-void HdAnariMesh::UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
+HdAnariGeometry::PrimvarSource HdAnariMesh::UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
     HdInterpolation interpolation,
     const TfToken &attributeName,
     const VtValue &value)
 {
+  fprintf(stderr, "=== Creating source for primvar %s\n", attributeName.GetText());
   switch (interpolation) {
   case HdInterpolationConstant: {
-    _SetGeometryAttributeConstant(attributeName, value);
+    fprintf(stderr, "  holding a constant value of type %s\n", value.GetTypeName().c_str());
+    if (value.IsArrayValued()) {
+      if (value.GetArraySize() == 0) {
+        TF_RUNTIME_ERROR("Constant interpolation with no value.");
+        return {};
+      }
+      if (value.GetArraySize() > 1) {
+        TF_RUNTIME_ERROR("Constant interpolation with more than one value.");
+      }
+    }
+
+    GfVec4f v;
+    if (_GetVtValueAsAttribute(value, v)) {
+      return v;
+    } else {
+      TF_RUNTIME_ERROR("Error extracting value from primvar %s", attributeName.GetText());
+    }
+
+#if 0
+    if (value.IsHolding<VtFloatArray>()) {
+      return GfVec4f(value.UncheckedGet<VtFloatArray>()[0], 0.0f, 0.0f, 1.0f);
+    } else if (value.IsHolding<VtVec2fArray>()) {
+      auto vec2 = value.UncheckedGet<VtVec2fArray>()[0];
+      return GfVec4f(vec2[0], vec2[1], 0.0f, 1.0f);
+    } else if (value.IsHolding<VtVec3fArray>()) {
+      auto vec3 = value.UncheckedGet<VtVec3fArray>()[0];
+      return GfVec4f(vec3[0], vec3[1], vec3[2], 1.0f);
+    } else if (value.IsHolding<VtVec4fArray>()) {
+      return value.UncheckedGet<VtVec4fArray>()[0];
+    } if (value.IsHolding<VtIntArray>()) {
+      return GfVec4f(value.UncheckedGet<VtIntArray>()[0], 0.0f, 0.0f, 1.0f);
+    } else if (value.IsHolding<VtVec2iArray>()) {
+      auto vec2 = value.UncheckedGet<VtVec2iArray>()[0];
+      return GfVec4f(vec2[0], vec2[1], 0.0f, 1.0f);
+    } else if (value.IsHolding<VtVec3iArray>()) {
+      auto vec3 = value.UncheckedGet<VtVec3iArray>()[0];
+      return GfVec4f(vec3[0], vec3[1], vec3[2], 1.0f);
+    } else if (value.IsHolding<VtVec4iArray>()) {
+      return value.UncheckedGet<VtVec4iArray>()[0];
+    } else {
+      TF_RUNTIME_ERROR("Unsupported type %s", value.GetTypeName().c_str());
+      return {};
+    }
+    } else {
+    if (value.IsHolding<float>()) {
+      return GfVec4f(value.UncheckedGet<float>(), 0.0f, 0.0f, 1.0f);
+    } else if (value.IsHolding<GfVec2f>()) {
+      auto vec2 = value.UncheckedGet<GfVec2f>();
+      return GfVec4f(vec2[0], vec2[1], 0.0f, 1.0f);
+    } else if (value.IsHolding<GfVec3f>()) {
+      auto vec3 = value.UncheckedGet<GfVec3f>();
+      return GfVec4f(vec3[0], vec3[1], vec3[2], 1.0f);
+    } else if (value.IsHolding<GfVec4f>()) {
+      return value.UncheckedGet<GfVec4f>();
+    } if (value.IsHolding<int>()) {
+      return GfVec4f(value.UncheckedGet<int>(), 0.0f, 0.0f, 1.0f);
+    } else if (value.IsHolding<GfVec2i>()) {
+      auto vec2 = value.UncheckedGet<GfVec2i>();
+      return GfVec4f(vec2[0], vec2[1], 0.0f, 1.0f);
+    } else if (value.IsHolding<GfVec3i>()) {
+      auto vec3 = value.UncheckedGet<GfVec3i>();
+      return GfVec4f(vec3[0], vec3[1], vec3[2], 1.0f);
+    } else if (value.IsHolding<GfVec4i>()) {
+      return value.UncheckedGet<GfVec4i>();
+    } else {
+      TF_RUNTIME_ERROR("Unsupported type %s", value.GetTypeName().c_str());
+      return {};
+    }
+    }
+#endif
     break;
   }
   case HdInterpolationUniform: {
     VtValue perFace;
     meshUtil_->GatherPerFacePrimvar(
         GetId(), attributeName, value, trianglePrimitiveParams_, &perFace);
-    auto bindingPoint = _GetPrimitiveBindingPoint(attributeName);
-    if (bindingPoint.IsEmpty()) {
-      TF_CODING_ERROR("%s is not a valid per primitive geometry attribute\n",
-          attributeName.GetText());
-      break;
-    }
-    _SetGeometryAttributeArray(attributeName, bindingPoint, perFace);
-    break;
+    const auto& perFaceV = perFace.UncheckedGet<VtVec3iArray>();
+    return _GetAttributeArray(perFace, ANARI_UINT32_VEC3);
   }
   case HdInterpolationFaceVarying: {
-    auto bindingPoint = _GetFaceVaryingBindingPoint(attributeName);
-    if (bindingPoint.IsEmpty()) {
-      TF_CODING_ERROR("%s is not a valid faceVarying geometry attribute\n",
-          attributeName.GetText());
-      break;
-    }
-
     HdVtBufferSource buffer(attributeName, value);
     VtValue triangulatedPrimvar;
     auto success =
@@ -163,28 +242,30 @@ void HdAnariMesh::UpdatePrimvarSource(HdSceneDelegate *sceneDelegate,
             &triangulatedPrimvar);
 
     if (success) {
-      _SetGeometryAttributeArray(
-          attributeName, bindingPoint, triangulatedPrimvar);
+      return _GetAttributeArray(triangulatedPrimvar);
     } else {
       TF_CODING_ERROR("     ERROR: could not triangulate face-varying data\n");
-      _SetGeometryAttributeArray(attributeName, bindingPoint, VtValue());
+      return {};
     }
     break;
   }
   case HdInterpolationVarying:
   case HdInterpolationVertex: {
-    auto bindingPoint = _GetVertexBindingPoint(attributeName);
-    if (bindingPoint.IsEmpty()) {
-      TF_CODING_ERROR("%s is not a valid vertex geometry attribute\n",
-          attributeName.GetText());
-      break;
-    }
-    _SetGeometryAttributeArray(attributeName, bindingPoint, value);
+    return _GetAttributeArray(value);
+  }
+  case HdInterpolationInstance:
+  case HdInterpolationCount:
+    assert(false);
     break;
   }
-  default:
-    break;
-  }
+
+  return {};
+}
+
+void HdAnariMesh::Finalize(HdRenderParam* renderParam_) {
+  if (normals_) anari::release(_anari.device, normals_);
+  if (triangles_) anari::release(_anari.device, triangles_);
+  HdAnariGeometry::Finalize(renderParam_);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
