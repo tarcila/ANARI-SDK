@@ -24,6 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      skip: ${{ steps.version_check.outputs.skip }}
+      version: ${{ steps.tag.outputs.version }}
+      tag_name: ${{ steps.tag.outputs.tag_name }}
     steps:
       - name: Determine tag name
         id: tag
@@ -208,3 +212,124 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Check the workflow logs for details." >> $GITHUB_STEP_SUMMARY
           fi
+
+  test-vcpkg-windows:
+    needs: update-vcpkg
+    if: needs.update-vcpkg.outputs.skip != 'true' && success()
+    runs-on: windows-latest
+    steps:
+      - name: Checkout ANARI-SDK vcpkg branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VCPKG_BRANCH }}
+          path: anari-sdk
+          fetch-depth: 1
+
+      - name: Install vcpkg
+        working-directory: anari-sdk
+        run: |
+          .\bootstrap-vcpkg.bat
+
+      - name: Test vcpkg build on Windows
+        working-directory: anari-sdk
+        run: |
+          .\vcpkg install ${{ env.ANARI_PORT_NAME }} --no-downloads-cache
+          Write-Host "✓ vcpkg build succeeded on Windows"
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-build-logs-windows
+          path: |
+            anari-sdk/buildtrees/${{ env.ANARI_PORT_NAME }}/
+          if-no-files-found: ignore
+
+  test-vcpkg-macos:
+    needs: update-vcpkg
+    if: needs.update-vcpkg.outputs.skip != 'true' && success()
+    runs-on: macos-latest
+    steps:
+      - name: Checkout ANARI-SDK vcpkg branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VCPKG_BRANCH }}
+          path: anari-sdk
+          fetch-depth: 1
+
+      - name: Install vcpkg
+        working-directory: anari-sdk
+        run: |
+          ./bootstrap-vcpkg.sh
+
+      - name: Test vcpkg build on macOS
+        working-directory: anari-sdk
+        run: |
+          ./vcpkg install ${{ env.ANARI_PORT_NAME }} --no-downloads-cache
+          echo "✓ vcpkg build succeeded on macOS"
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-build-logs-macos
+          path: |
+            anari-sdk/buildtrees/${{ env.ANARI_PORT_NAME }}/
+          if-no-files-found: ignore
+
+  summary:
+    needs: [update-vcpkg, test-vcpkg-windows, test-vcpkg-macos]
+    if: always() && needs.update-vcpkg.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create multi-platform summary
+        run: |
+          echo "## vcpkg Multi-Platform Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ needs.update-vcpkg.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.update-vcpkg.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.update-vcpkg.result }}" == "success" ]; then
+            echo "| Linux | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Linux | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.test-vcpkg-windows.result }}" == "success" ]; then
+            echo "| Windows | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.test-vcpkg-windows.result }}" == "skipped" ]; then
+            echo "| Windows | ⏭️ Skipped (Linux failed) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Windows | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.test-vcpkg-macos.result }}" == "success" ]; then
+            echo "| macOS | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.test-vcpkg-macos.result }}" == "skipped" ]; then
+            echo "| macOS | ⏭️ Skipped (Linux failed) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| macOS | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.update-vcpkg.result }}" == "success" ] && [ "${{ needs.test-vcpkg-windows.result }}" == "success" ] && [ "${{ needs.test-vcpkg-macos.result }}" == "success" ]; then
+            echo "**Overall Status:** ✅ All platforms succeeded" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The vcpkg port has been updated and pushed to the \`${{ env.VCPKG_BRANCH }}\` branch." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Next steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Review the changes in the \`${{ env.VCPKG_BRANCH }}\` branch" >> $GITHUB_STEP_SUMMARY
+            echo "2. Create a pull request to Microsoft/vcpkg" >> $GITHUB_STEP_SUMMARY
+            echo "3. Follow vcpkg's contribution guidelines" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Overall Status:** ❌ One or more platforms failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the individual job logs and artifacts for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
