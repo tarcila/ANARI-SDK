@@ -1,0 +1,217 @@
+# Copyright 2021-2025 The Khronos Group
+# SPDX-License-Identifier: Apache-2.0
+
+name: Update vcpkg Port
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to process (e.g., v0.16.0)'
+        required: true
+        type: string
+
+env:
+  VCPKG_BRANCH: vcpkg
+  VCPKG_REPO: microsoft/vcpkg
+  ANARI_PORT_NAME: anari
+
+jobs:
+  update-vcpkg:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Determine tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG_NAME="${{ github.event.inputs.tag_name }}"
+          else
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          # Extract version without 'v' prefix
+          VERSION="${TAG_NAME#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Processing tag: $TAG_NAME (version: $VERSION)"
+
+      - name: Checkout vcpkg repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.VCPKG_REPO }}
+          ref: master
+          path: vcpkg
+          fetch-depth: 0
+
+      - name: Check current vcpkg version and compare
+        id: version_check
+        working-directory: vcpkg
+        run: |
+          # Find the current ANARI version in vcpkg
+          PORTFILE_PATH="ports/${{ env.ANARI_PORT_NAME }}/portfile.cmake"
+          VCPKG_JSON_PATH="ports/${{ env.ANARI_PORT_NAME }}/vcpkg.json"
+          
+          if [ ! -f "$VCPKG_JSON_PATH" ]; then
+            echo "Error: vcpkg.json not found at $VCPKG_JSON_PATH"
+            exit 1
+          fi
+          
+          # Extract current version from vcpkg.json
+          CURRENT_VERSION=$(jq -r '.version' "$VCPKG_JSON_PATH" 2>/dev/null || echo "0.0.0")
+          echo "Current vcpkg version: $CURRENT_VERSION"
+          echo "New tag version: ${{ steps.tag.outputs.version }}"
+          
+          # Compare versions using sort -V (version sort)
+          NEWER=$(printf "%s\n%s" "$CURRENT_VERSION" "${{ steps.tag.outputs.version }}" | sort -V | tail -n1)
+          
+          if [ "$NEWER" != "${{ steps.tag.outputs.version }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::warning::Tag version ${{ steps.tag.outputs.version }} is older than or equal to current vcpkg version $CURRENT_VERSION. Skipping update."
+            exit 0
+          fi
+          
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Version check passed: ${{ steps.tag.outputs.version }} > $CURRENT_VERSION"
+
+      - name: Setup vcpkg working directory
+        if: steps.version_check.outputs.skip != 'true'
+        working-directory: vcpkg
+        run: |
+          # Configure git to use token via extraheader (same method as actions/checkout)
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(echo -n x-access-token:${{ secrets.GITHUB_TOKEN }} | base64)"
+          
+          # Add ANARI-SDK remote
+          git remote add anari-sdk https://github.com/${{ github.repository }}.git
+
+      - name: Update ANARI port files
+        if: steps.version_check.outputs.skip != 'true'
+        working-directory: vcpkg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PORTFILE_PATH="ports/${{ env.ANARI_PORT_NAME }}/portfile.cmake"
+          VCPKG_JSON_PATH="ports/${{ env.ANARI_PORT_NAME }}/vcpkg.json"
+          
+          # Update vcpkg.json version
+          jq --arg version "${{ steps.tag.outputs.version }}" '.version = $version' "$VCPKG_JSON_PATH" > temp.json
+          mv temp.json "$VCPKG_JSON_PATH"
+          
+          # Update portfile.cmake REF to the new tag
+          sed -i "s|REF v[0-9]\+\.[0-9]\+\.[0-9]\+|REF ${{ steps.tag.outputs.tag_name }}|g" "$PORTFILE_PATH"
+          
+          # Download release archive using gh-cli
+          echo "Downloading release archive for ${{ steps.tag.outputs.tag_name }}"
+          gh --repo ${{ github.repository }} \
+            release download ${{ steps.tag.outputs.tag_name }} \
+            --archive "tar.gz" \
+            --output archive.tar.gz
+          
+          # Calculate SHA512
+          NEW_SHA512=$(sha512sum archive.tar.gz | awk '{print $1}')
+          echo "New SHA512: $NEW_SHA512"
+          
+          # Update SHA512 in portfile.cmake
+          sed -i "s|SHA512 [a-f0-9]\{128\}|SHA512 $NEW_SHA512|g" "$PORTFILE_PATH"
+          
+          rm archive.tar.gz
+          
+          echo "Updated files:"
+          git diff "$VCPKG_JSON_PATH" "$PORTFILE_PATH"
+
+      - name: Install vcpkg
+        if: steps.version_check.outputs.skip != 'true'
+        working-directory: vcpkg
+        run: |
+          ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=$PWD" >> $GITHUB_ENV
+
+      - name: Run vcpkg x-add-version
+        if: steps.version_check.outputs.skip != 'true'
+        working-directory: vcpkg
+        run: |
+          ./vcpkg x-add-version --all --overwrite-version
+          
+          echo "Version files updated:"
+          git status --short
+
+      - name: Test vcpkg build
+        if: steps.version_check.outputs.skip != 'true'
+        working-directory: vcpkg
+        run: |
+          # Test building the port
+          sudo apt-get install -y \
+            linux-libc-dev \
+            autoconf autoconf-archive automake libtool
+          ./vcpkg install ${{ env.ANARI_PORT_NAME }}
+          
+          echo "✓ vcpkg build succeeded"
+
+      - name: Upload build logs on failure
+        if: failure() && steps.version_check.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-build-logs
+          path: |
+            vcpkg/buildtrees/${{ env.ANARI_PORT_NAME }}/
+          if-no-files-found: ignore
+
+      - name: Commit and push changes
+        if: steps.version_check.outputs.skip != 'true'
+        working-directory: vcpkg
+        run: |
+          # Check if there are changes to commit
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          # Stage all changes
+          git add -A
+
+          # Make sure some committer is known to git
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          
+          # Commit
+          git commit -m "Update ANARI port to version ${{ steps.tag.outputs.version }}" \
+                     -m "- Updated from tag ${{ steps.tag.outputs.tag_name }}" \
+                     -m "- Updated vcpkg.json version" \
+                     -m "- Updated portfile.cmake REF and SHA512" \
+                     -m "- Ran vcpkg x-add-version --all" \
+                     -m "" \
+                     -m "Automated by GitHub Actions"
+          
+          # Force push to vcpkg branch (creates branch if it doesn't exist)
+          git push -f anari-sdk HEAD:refs/heads/${{ env.VCPKG_BRANCH }}
+          
+          echo "✓ Changes pushed to ${{ env.VCPKG_BRANCH }} branch"
+
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## vcpkg Update Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ steps.tag.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.tag.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.version_check.outputs.skip }}" == "true" ]; then
+            echo "**Status:** ⚠️ Skipped (version ${{ steps.tag.outputs.version }} is not newer than vcpkg version ${{ steps.version_check.outputs.current_version }})" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ job.status }}" == "success" ]; then
+            echo "**Status:** ✅ Success" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The vcpkg port has been updated and pushed to the \`${{ env.VCPKG_BRANCH }}\` branch." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Next steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Review the changes in the \`${{ env.VCPKG_BRANCH }}\` branch" >> $GITHUB_STEP_SUMMARY
+            echo "2. Create a pull request to Microsoft/vcpkg" >> $GITHUB_STEP_SUMMARY
+            echo "3. Follow vcpkg's contribution guidelines" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** ❌ Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the workflow logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
