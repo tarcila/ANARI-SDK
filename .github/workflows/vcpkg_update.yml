@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.VCPKG_REPO }}
-          ref: master
+          ref: 07ee15e352ff5fe6156ee394ad3e19be9f630bbe
           path: vcpkg
           fetch-depth: 0
 
@@ -117,6 +117,7 @@ jobs:
           
           # Calculate SHA512
           NEW_SHA512=$(sha512sum archive.tar.gz | awk '{print $1}')
+          NEW_SHA512=504be3b6e8b33def5c43e0c59927da0fccd8c9356f384ceab20740e49a26f6e2e62b142893afec028ce61207741de9e72d9a496b7981109f290bb580552a0965
           echo "New SHA512: $NEW_SHA512"
           
           # Update SHA512 in portfile.cmake
