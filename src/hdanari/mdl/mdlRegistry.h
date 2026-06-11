@@ -97,6 +97,11 @@ class HDANARI_MDL_API HdAnariMdlRegistry
   DllHandle m_dllHandle;
   mi::base::Handle<mi::neuraylib::INeuray> m_neuray;
   mi::base::Handle<mi::neuraylib::IScope> m_globalScope;
+  // Dedicated child scope for our own module introspection. Keeps our
+  // transactions isolated from any other consumer of this shared INeuray
+  // instance (e.g. the VisRTX device), so loading/aborting modules here can
+  // never disturb their view of the database.
+  mi::base::Handle<mi::neuraylib::IScope> m_introspectionScope;
   mi::base::Handle<mi::neuraylib::IMdl_factory> m_mdlFactory;
   mi::base::Handle<mi::neuraylib::IMdl_execution_context> m_executionContext;
   mi::base::Handle<mi::base::ILogger> m_logger;

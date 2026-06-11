@@ -187,6 +187,10 @@ void HdAnariRenderDelegate::Initialize()
           "ineuray",
           ANARI_VOID_POINTER,
           mdlRegistryInstance->getINeuray());
+      // Device parameters only take effect once committed; without this the
+      // device never receives our shared INeuray and MDL material support
+      // silently fails to initialize.
+      anari::commitParameters(device, device);
     }
   }
 #endif

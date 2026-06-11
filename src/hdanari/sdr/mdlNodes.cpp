@@ -276,8 +276,6 @@ SdrShaderPropertyUniquePtrVec MdlFunctionSdrNode::GetShaderProperties(
 {
   SdrShaderPropertyUniquePtrVec properties;
 
-  return properties;
-
   // handle return type
   auto returnType =
       mi::base::make_handle(functionDefinition->get_return_type());

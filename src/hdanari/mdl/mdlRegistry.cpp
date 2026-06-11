@@ -200,6 +200,14 @@ HdAnariMdlRegistry::HdAnariMdlRegistry(DllHandle dllHandle,
   if (!m_globalScope.is_valid_interface())
     throw std::runtime_error("Failed to acquire neuray database global scope");
 
+  // Isolate our introspection work from any other consumer of this shared
+  // INeuray (e.g. the VisRTX device): use a private child scope rather than
+  // the global one.
+  m_introspectionScope =
+      make_handle(database->create_scope(m_globalScope.get()));
+  if (!m_introspectionScope.is_valid_interface())
+    throw std::runtime_error("Failed to create MDL introspection scope");
+
   // Get an execution context for later use.
   m_mdlFactory =
       make_handle(m_neuray->get_api_component<mi::neuraylib::IMdl_factory>());
@@ -219,6 +227,7 @@ HdAnariMdlRegistry::~HdAnariMdlRegistry()
 {
   m_executionContext = {};
   m_mdlFactory = {};
+  m_introspectionScope = {};
   m_globalScope = {};
   if (m_dllHandle) {
     m_neuray->shutdown();
@@ -249,7 +258,7 @@ auto HdAnariMdlRegistry::createTransaction(mi::neuraylib::IScope *scope)
     -> mi::neuraylib::ITransaction *
 {
   if (!scope)
-    scope = m_globalScope.get();
+    scope = m_introspectionScope.get();
   return scope->create_transaction();
 }
 
