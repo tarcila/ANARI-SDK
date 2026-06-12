@@ -28,11 +28,14 @@
 
 #include <anari/anari_cpp.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace std::string_literals;
 using namespace std::string_view_literals;
@@ -43,6 +46,46 @@ anari::Material HdAnariMdlMaterial::CreateMaterial(anari::Device device,
     const HdMaterialNetwork2Interface &materialNetworkIface)
 {
   return anari::newObject<anari::Material>(device, "mdl");
+}
+
+std::string HdAnariMdlMaterial::ComputeContentKey(
+    const HdMaterialNetwork2Interface &materialNetworkIface)
+{
+  auto con = materialNetworkIface.GetTerminalConnection(
+      HdMaterialTerminalTokens->surface);
+  if (!con.first)
+    return {};
+
+  auto terminal = con.second.upstreamNodeName;
+  std::ostringstream key;
+  key << materialNetworkIface.GetNodeType(terminal).GetString();
+
+  // Path-independent: the MDL material identifier plus the authored parameter
+  // values (same set ProcessMdlNode forwards to the device). Sorted so the key
+  // doesn't depend on enumeration order.
+  std::vector<std::string> params;
+  for (auto name :
+      materialNetworkIface.GetAuthoredNodeParameterNames(terminal)) {
+    if (name.GetString().substr(0, 9) == "typeName:")
+      continue;
+
+    auto nodeName = terminal;
+    auto inputName = name;
+    auto cnxs = materialNetworkIface.GetNodeInputConnection(terminal, name);
+    if (cnxs.size()) {
+      nodeName = cnxs.front().upstreamNodeName;
+      inputName = cnxs.front().upstreamOutputName;
+    }
+
+    std::ostringstream entry;
+    entry << name.GetString() << '='
+          << materialNetworkIface.GetNodeParameterValue(nodeName, inputName);
+    params.push_back(entry.str());
+  }
+  std::sort(begin(params), end(params));
+  for (const auto &p : params)
+    key << '|' << p;
+  return key.str();
 }
 
 void HdAnariMdlMaterial::SyncMaterialParameters(anari::Device device,
