@@ -133,7 +133,7 @@ void HdAnariRenderDelegate::Initialize()
       {"Sample Limit", HdAnariRenderSettingsTokens->sampleLimit, VtValue(128)});
 
   _settingDescriptors.push_back(
-      {"Max Ray Depth", HdAnariRenderSettingsTokens->maxRayDepth, VtValue(0)});
+      {"Max Ray Depth", HdAnariRenderSettingsTokens->maxRayDepth, VtValue(8)});
 
   _settingDescriptors.push_back(
       { "Pixel Samples",HdAnariRenderSettingsTokens->pixelSamples, VtValue(1) });
@@ -143,7 +143,7 @@ void HdAnariRenderDelegate::Initialize()
 
   _settingDescriptors.push_back({"subtype",
       HdAnariRenderSettingsTokens->renderSubtype,
-      VtValue("default")});
+      VtValue("quality")});
   _settingDescriptors.push_back({"debug:method",
       HdAnariRenderSettingsTokens->debugMethod,
       VtValue("Ns.abs")});
@@ -286,10 +286,18 @@ HdAovDescriptor HdAnariRenderDelegate::GetDefaultAovDescriptor(
 VtDictionary HdAnariRenderDelegate::GetRenderStats() const
 {
   VtDictionary stats;
-#if 0
-  stats[HdPerfTokens->numCompletedSamples.GetString()] =
-      _renderer.GetCompletedSamples();
-#endif
+  if (!_renderParam)
+    return stats;
+
+  const int completedSamples = _renderParam->CompletedSamples();
+  const int sampleLimit = _renderParam->SampleLimit();
+
+  stats[HdPerfTokens->numCompletedSamples.GetString()] = completedSamples;
+  if (sampleLimit > 0) {
+    stats["totalSamples"] = sampleLimit;
+    stats["percentDone"] = 100.0 * completedSamples / sampleLimit;
+  }
+
   return stats;
 }
 
