@@ -67,6 +67,16 @@ class HDANARI_MDL_API HdAnariMdlRegistry
       mi::neuraylib::ITransaction *transaction)
       -> const mi::neuraylib::IModule *;
 
+  // Fallback for a path-based load that failed (e.g. a scene shipped a .mdl
+  // without its ./textures). If the path passes through a directory whose
+  // basename matches an MDL search root, derive the canonical module name from
+  // the tail and load it by name, so the entity resolver finds a complete copy
+  // on the search path with its resources co-located. Returns null if no
+  // search-root segment matches or the named module still fails.
+  auto loadModuleByCanonicalName(std::string_view filePath,
+      mi::neuraylib::ITransaction *transaction)
+      -> const mi::neuraylib::IModule *;
+
   auto getFunctionDefinition(const mi::neuraylib::IModule *module,
       std::string_view functionName,
       mi::neuraylib::ITransaction *transaction)
