@@ -60,6 +60,20 @@ if(HDANARI_ENABLE_MDL)
   )
   project_link_libraries(PRIVATE hdanari_mdl)
 endif()
+if(HDANARI_ENABLE_MATERIALX)
+  # Monolithic USD: ${PXR_LIBRARIES} == usd_m only, so hdMtlx is NOT in it and
+  # the explicit link is required. MaterialXCore/Format are un-namespaced and
+  # pulled transitively by hdMtlx; listed for clarity. MaterialX targets already
+  # exist via the top-level find_package(USD) -> find_dependency(MaterialX).
+  find_package(MaterialX REQUIRED)
+  project_sources(
+    PRIVATE material/materialx.cpp
+  )
+  project_compile_definitions(
+    PRIVATE HDANARI_ENABLE_MATERIALX
+  )
+  project_link_libraries(PRIVATE hdMtlx MaterialXCore MaterialXFormat)
+endif()
 
 ## Configure plugInfo file ##
 
