@@ -485,6 +485,11 @@ TfTokenVector HdAnariRenderDelegate::GetMaterialRenderContexts() const
 #ifdef HDANARI_ENABLE_MDL
       HdAnariMaterialTokens->mdl,
 #endif
+#ifdef HDANARI_ENABLE_MATERIALX
+      // Required, or Hydra resolves the UsdPreviewSurface terminal instead of
+      // the MaterialX one and the delegate never sees a MaterialX network.
+      HdAnariMaterialTokens->mtlx,
+#endif
       UsdShadeTokens->universalRenderContext};
 }
 
@@ -493,6 +498,9 @@ TfTokenVector HdAnariRenderDelegate::GetShaderSourceTypes() const
   return {
 #ifdef HDANARI_ENABLE_MDL
       HdAnariMaterialTokens->mdl,
+#endif
+#ifdef HDANARI_ENABLE_MATERIALX
+      HdAnariMaterialTokens->mtlx,
 #endif
       UsdShadeTokens->universalRenderContext};
 }

@@ -12,6 +12,10 @@
 #include "material/mdl.h"
 #endif
 
+#ifdef HDANARI_ENABLE_MATERIALX
+#include <pxr/usd/sdr/registry.h>
+#endif
+
 #include "renderDelegate.h"
 #include "renderParam.h"
 
@@ -199,6 +203,19 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
       materialType_ = hdAnariRenderParam->GetMaterialType();
     }
 
+#ifdef HDANARI_ENABLE_MATERIALX
+    // Detect MaterialX terminals (SdrShaderNode with source type "mtlx").
+    // Routing to the MaterialX backend is wired in a later task; for now only
+    // log, so behavior is unchanged (falls back to Matte/PhysicallyBased).
+    if (SdrRegistry::GetInstance().GetShaderNodeByIdentifierAndType(
+            terminalType, HdAnariMaterialTokens->mtlx)) {
+      TF_DEBUG_MSG(HD_ANARI_RD_MATERIAL,
+          "MaterialX terminal '%s' detected (device materialx support: %d)\n",
+          terminalType.GetText(),
+          int(hdAnariRenderParam->SupportsMaterialX()));
+    }
+#endif
+
     switch (materialType_) {
     case MaterialType::Matte: {
       // Create support material, enumerate primvars and textures
@@ -230,6 +247,10 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
           materialNetworkIface, HdMaterialTerminalTokens->surface);
       break;
     }
+#endif
+#ifdef HDANARI_ENABLE_MATERIALX
+    case MaterialType::MaterialX:
+      break; // backend wired in a later task; routing not yet enabled
 #endif
     }
 
@@ -301,6 +322,10 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
       }
       break;
     }
+#endif
+#ifdef HDANARI_ENABLE_MATERIALX
+    case MaterialType::MaterialX:
+      break; // backend wired in a later task; routing not yet enabled
 #endif
     }
   }

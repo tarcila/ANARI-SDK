@@ -62,6 +62,13 @@ class HdAnariRenderParam final : public HdRenderParam
     return _materialType;
   }
 
+  // True when the ANARI device implements the `materialx` material subtype, so
+  // the material router can fall back gracefully when it does not.
+  bool SupportsMaterialX() const
+  {
+    return _supportsMaterialX;
+  }
+
   void RegisterGeometry(const HdAnariGeometry *geometry);
   void UnregisterGeometry(const HdAnariGeometry *geometry);
   void RegisterLight(const HdAnariLight *light);
@@ -90,6 +97,7 @@ class HdAnariRenderParam final : public HdRenderParam
  private:
   anari::Device _device{nullptr};
   anari::Material _material{nullptr};
+  bool _supportsMaterialX{false};
   HdAnariMaterial::MaterialType _materialType{
       HdAnariMaterial::MaterialType::Matte};
   HdAnariMaterial::PrimvarBinding _primvarBinding;
@@ -127,6 +135,17 @@ inline HdAnariRenderParam::HdAnariRenderParam(
   anari::commitParameters(d, _material);
 
   _primvarBinding.emplace(HdTokens->displayColor, "color");
+
+  // Detect the materialx material subtype once, so material routing can fall
+  // back to PhysicallyBased/Matte on devices that do not implement it.
+  if (const char *const *subtypes = anariGetObjectSubtypes(d, ANARI_MATERIAL)) {
+    for (auto s = subtypes; *s; ++s) {
+      if (std::string(*s) == "materialx") {
+        _supportsMaterialX = true;
+        break;
+      }
+    }
+  }
 }
 
 inline HdAnariRenderParam::~HdAnariRenderParam()

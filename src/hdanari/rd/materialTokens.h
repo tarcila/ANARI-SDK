@@ -23,6 +23,7 @@
   (ior) \
   (mdl) \
   (metallic) \
+  (mtlx) \
   (normal) \
   (occlusion) \
   (opacity) \

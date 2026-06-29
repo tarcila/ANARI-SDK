@@ -30,6 +30,7 @@ struct HdAnariMaterial : public HdMaterial
     Matte,
     PhysicallyBased,
     Mdl,
+    MaterialX,
   };
 
   using PrimvarBinding =
