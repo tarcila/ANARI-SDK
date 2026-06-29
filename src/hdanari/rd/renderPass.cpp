@@ -359,13 +359,21 @@ bool HdAnariRenderPass::_UpdateProgress()
       anari::getProperty(d, _anari.frame, "numSamples", numSamples, ANARI_WAIT);
 
   // The accumulation bound is the renderer's introspected "sampleLimit"
-  // parameter, when it advertises one. Cast rather than IsHolding<int> so an
-  // int32/uint32/int64-typed parameter is honored, not silently treated as 0.
+  // parameter, when it advertises one.
   static const TfToken sampleLimitToken("sampleLimit");
   HdRenderDelegate *renderDelegate = GetRenderIndex()->GetRenderDelegate();
   const VtValue sp = renderDelegate->GetRenderSetting(sampleLimitToken);
-  const int sampleLimit =
-      sp.CanCast<int>() ? VtValue::Cast<int>(sp).UncheckedGet<int>() : 0;
+  // When the active renderer advertises no sampleLimit (e.g. VisRTX's "default"
+  // renderer exposes none), fall back to a finite host-side bound so batch
+  // renders (usdrecord) converge instead of accumulating forever. A renderer
+  // that DOES expose sampleLimit but is explicitly set to 0 still means
+  // "unbounded" and keeps refining (interactive viewers). Cast rather than
+  // IsHolding<int> so an int32/uint32/int64-typed parameter is honored, not
+  // silently treated as the fallback.
+  static constexpr int kFallbackSampleLimit = 128;
+  const int sampleLimit = sp.CanCast<int>()
+      ? VtValue::Cast<int>(sp).UncheckedGet<int>()
+      : kFallbackSampleLimit;
 
   // Devices that don't report sample progress render a complete frame in a
   // single pass, so a finished frame is already fully converged.
@@ -375,11 +383,10 @@ bool HdAnariRenderPass::_UpdateProgress()
   // No per-sample progress reported: a finished frame is fully converged.
   if (!hasNumSamples)
     return true;
-  // Progress is reported but no usable sample limit is advertised: treat a
-  // finished frame as converged instead of re-rendering forever (which would
-  // prevent usdrecord from ever terminating).
+  // An explicit sampleLimit of 0 means "unbounded": keep refining (the fallback
+  // above only applies when the renderer advertises no sampleLimit at all).
   if (sampleLimit <= 0)
-    return true;
+    return false;
   return numSamples >= sampleLimit;
 }
 
