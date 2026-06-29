@@ -85,13 +85,6 @@ anari::Material HdAnariMaterialXMaterial::CreateMaterial(anari::Device device)
   return anari::newObject<anari::Material>(device, "materialx");
 }
 
-std::string HdAnariMaterialXMaterial::ComputeContentKey(
-    const HdMaterialNetwork2Interface &materialNetworkIface)
-{
-  // The serialized document is itself a path-independent content identifier.
-  return BuildInlineMtlxDocument(materialNetworkIface, nullptr);
-}
-
 HdAnariMaterial::PrimvarMapping HdAnariMaterialXMaterial::EnumeratePrimvars(
     const HdMaterialNetwork2Interface &materialNetworkIface, TfToken)
 {
