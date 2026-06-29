@@ -13,6 +13,8 @@
 #endif
 
 #ifdef HDANARI_ENABLE_MATERIALX
+#include "material/materialx.h"
+
 #include <pxr/usd/sdr/registry.h>
 #endif
 
@@ -204,15 +206,18 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 
 #ifdef HDANARI_ENABLE_MATERIALX
-    // Detect MaterialX terminals (SdrShaderNode with source type "mtlx").
-    // Routing to the MaterialX backend is wired in a later task; for now only
-    // log, so behavior is unchanged (falls back to Matte/PhysicallyBased).
+    // Route MaterialX terminals (SdrShaderNode with source type "mtlx") to the
+    // MaterialX backend, but only when the device implements the subtype;
+    // otherwise leave the Matte fallback in place.
     if (SdrRegistry::GetInstance().GetShaderNodeByIdentifierAndType(
             terminalType, HdAnariMaterialTokens->mtlx)) {
-      TF_DEBUG_MSG(HD_ANARI_RD_MATERIAL,
-          "MaterialX terminal '%s' detected (device materialx support: %d)\n",
-          terminalType.GetText(),
-          int(hdAnariRenderParam->SupportsMaterialX()));
+      if (hdAnariRenderParam->SupportsMaterialX())
+        materialType_ = MaterialType::MaterialX;
+      else
+        TF_WARN(
+            "MaterialX material %s: device lacks the 'materialx' subtype; "
+            "falling back to the default material",
+            GetId().GetText());
     }
 #endif
 
@@ -249,8 +254,15 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 #endif
 #ifdef HDANARI_ENABLE_MATERIALX
-    case MaterialType::MaterialX:
-      break; // backend wired in a later task; routing not yet enabled
+    case MaterialType::MaterialX: {
+      // Created + configured in the DirtyParams pass (MDL lifecycle), so a
+      // DirtyResource-only Sync never leaves a live source-less material.
+      primvars_ = HdAnariMaterialXMaterial::EnumeratePrimvars(
+          materialNetworkIface, HdMaterialTerminalTokens->surface);
+      textures_ = HdAnariMaterialXMaterial::EnumerateTextures(
+          materialNetworkIface, HdMaterialTerminalTokens->surface);
+      break;
+    }
 #endif
     }
 
@@ -324,8 +336,19 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 #endif
 #ifdef HDANARI_ENABLE_MATERIALX
-    case MaterialType::MaterialX:
-      break; // backend wired in a later task; routing not yet enabled
+    case MaterialType::MaterialX: {
+      // Owned, created here (not in DirtyResource) so single-bit Syncs never
+      // leave a source-less material. samplers_ was already released+rebuilt
+      // from CreateSamplers(textures_={}) above (a no-op for MaterialX).
+      if (!material_)
+        material_ = HdAnariMaterialXMaterial::CreateMaterial(device_);
+      samplers_ = HdAnariMaterialXMaterial::SyncMaterialParameters(device_,
+          material_,
+          materialNetworkIface,
+          attributes_,
+          primvars_);
+      break;
+    }
 #endif
     }
   }
