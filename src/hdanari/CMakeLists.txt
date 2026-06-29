@@ -45,6 +45,9 @@ if(HDANARI_ENABLE_MDL)
     add_subdirectory(sdr)
   endif()
 endif()
+
+option(HDANARI_ENABLE_MATERIALX "Enable MaterialX material support for HdAnari (via a device materialx subtype)" OFF)
+
 add_subdirectory(rd)
 
 # Conditionally install a main plugInfo.json file
