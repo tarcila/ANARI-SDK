@@ -11,23 +11,25 @@
 
 #include <anari/anari_cpp.hpp>
 
-#include <string>
-
 PXR_NAMESPACE_OPEN_SCOPE
 
 // Renders a Hydra MaterialX network by converting it to an inline .mtlx
 // document (USD's hdMtlx) and handing it to a device `materialx` material via
 // sourceType="documentInline". No MaterialX->MDL transcoding happens here; the
-// device does that. Textures are bound as host-resolved ANARI samplers by their
-// MaterialX path (Task 4).
+// device does that. Wired textures are bound as host-resolved ANARI samplers by
+// their MaterialX path (the device's `textureInputs` property).
+//
+// Limitations (v1):
+//  - image2D samplers only; the sampler supplies texels, while the document's
+//    MDL image node drives the UV (texcoord set 0), wrap, and filter -- the
+//    sampler's own UV source / wrap / transform are bypassed.
+//  - Texture colorspace is carried in the document by hdMtlx and decoded by the
+//    generated MDL, so samplers are loaded Raw (no double sRGB decode).
+//  - Normal maps are not yet supported: triangle geometry currently exposes no
+//    tangents for the MDL normal-mapping path.
 struct HdAnariMaterialXMaterial final
 {
   static anari::Material CreateMaterial(anari::Device device);
-
-  // Path-independent content key (the serialized document). Scaffolding for a
-  // future shared-material cache; unused while materials are prim-owned.
-  static std::string ComputeContentKey(
-      const HdMaterialNetwork2Interface &materialNetworkIface);
 
   static HdAnariMaterial::PrimvarMapping EnumeratePrimvars(
       const HdMaterialNetwork2Interface &materialNetworkIface, TfToken terminal);
