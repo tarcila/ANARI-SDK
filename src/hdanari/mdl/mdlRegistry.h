@@ -104,6 +104,12 @@ class HDANARI_MDL_API HdAnariMdlRegistry
 
   ~HdAnariMdlRegistry();
 
+  // Heavy, fallible neuray setup (components, plugins, start, scopes, factory).
+  // May throw; the constructors call it inside a try/catch so a failure yields
+  // a disabled registry instead of an exception escaping TfSingleton's
+  // construction (which would wedge the singleton and hang every GetInstance).
+  void _Initialize(mi::base::ILogger *logger);
+
   DllHandle m_dllHandle;
   mi::base::Handle<mi::neuraylib::INeuray> m_neuray;
   mi::base::Handle<mi::neuraylib::IScope> m_globalScope;
