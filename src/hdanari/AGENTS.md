@@ -47,12 +47,19 @@ HdAnariRenderPass              → manages Frame/Camera/Renderer/World, drives r
 
 ### Material System
 
-`HdAnariMaterial` routes to one of three backends depending on the Hydra network:
+`HdAnariMaterial` routes to one of four backends depending on the Hydra network:
 - `HdAnariMatteMaterial` — simple diffuse (fallback)
 - `HdAnariPhysicallyBasedMaterial` — PBR via `UsdPreviewSurface` node translation
-- `HdAnariMdlMaterial` — MDL compilation via `HdAnariMdlRegistry` singleton (optional)
+- `HdAnariMdlMaterial` — MDL compilation via `HdAnariMdlRegistry` singleton (optional, `HDANARI_ENABLE_MDL`)
+- `HdAnariMaterialXMaterial` — MaterialX networks (optional, `HDANARI_ENABLE_MATERIALX`)
 
 `UsdPreviewSurfaceConverter` translates USD's `UsdPreviewSurface` and `UsdUVTexture` nodes. `HdAnariTextureLoader` loads via HIO with color space and filtering metadata.
+
+#### MaterialX backend
+
+`HdAnariMaterialXMaterial` does **no** MaterialX→MDL transcoding itself. It converts the Hydra network to an inline `.mtlx` document via USD's `hdMtlx` (`HdMtlxCreateMtlxDocumentFromHdMaterialNetworkInterface` + `writeToXmlString`) and hands it to a device `materialx` material as `sourceType="documentInline"`; the device transcodes to MDL. Requirements: USD built with `PXR_ENABLE_MATERIALX_SUPPORT`, and an ANARI device advertising the `materialx` subtype (today VisRTX) — otherwise the router falls back to PhysicallyBased/Matte. To make Hydra deliver a MaterialX terminal, `mtlx` is advertised from `GetMaterialRenderContexts()`/`GetShaderSourceTypes()`; device capability is cached as `HdAnariRenderParam::SupportsMaterialX()`.
+
+Wired textures are bound as **host-resolved** ANARI samplers (HIO, like the matte/PBR path), not loaded device-side: after a discovery commit, the backend reads the device's `textureInputs` `STRING_LIST` property (the exact MaterialX paths of bindable `filename` inputs) and binds an `image2D` sampler to each by that path. Baked asset paths are stripped from the document so the device does not attempt (and fail) to resolve them. Materials are prim-owned in v1 (no cross-instance sharing). Fixtures and a render gate live in `test/materialx/` (`verify.py`).
 
 ### Geometry & Primvar Binding
 
