@@ -27,7 +27,10 @@ template <typename T>
 struct _Element
 {
   T value;
-  void Clear() { value = T(0.0f); }
+  void Clear()
+  {
+    value = T(0.0f);
+  }
   void AddWithWeight(const _Element &src, float weight)
   {
     value += src.value * weight;
@@ -85,19 +88,28 @@ VtArray<T> _RefineArray(const Far::TopologyRefiner &refiner,
   return refined;
 }
 
-VtValue _RefineTyped(
-    const Far::TopologyRefiner &refiner, int level, _Mode mode, const VtValue &v)
+VtValue _RefineTyped(const Far::TopologyRefiner &refiner,
+    int level,
+    _Mode mode,
+    const VtValue &v)
 {
   if (v.IsHolding<VtVec3fArray>())
-    return VtValue(_RefineArray(refiner, level, mode, v.UncheckedGet<VtVec3fArray>()));
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtVec3fArray>()));
   if (v.IsHolding<VtVec2fArray>())
-    return VtValue(_RefineArray(refiner, level, mode, v.UncheckedGet<VtVec2fArray>()));
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtVec2fArray>()));
   if (v.IsHolding<VtVec4fArray>())
-    return VtValue(_RefineArray(refiner, level, mode, v.UncheckedGet<VtVec4fArray>()));
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtVec4fArray>()));
   if (v.IsHolding<VtFloatArray>())
-    return VtValue(_RefineArray(refiner, level, mode, v.UncheckedGet<VtFloatArray>()));
-  // Unsupported element type (e.g. integer ids): leave it to the caller.
-  return v;
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtFloatArray>()));
+  // Unsupported element type (e.g. double vecs, integer ids): drop it.
+  // Returning the coarse array unchanged would bind a vertex/varying attribute
+  // shorter than the refined vertex count and read out of bounds at render
+  // time.
+  return VtValue();
 }
 
 } // namespace

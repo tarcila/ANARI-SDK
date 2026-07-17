@@ -186,8 +186,9 @@ bool HdAnariRenderPass::_UpdateRenderer()
     if (value.IsEmpty())
       continue;
     if (!HdAnariSetRendererParameter(d, _anari.renderer, param, value)) {
-      TF_WARN("hdAnari: render setting '%s' could not be forwarded to ANARI "
-              "renderer parameter of type %s",
+      TF_WARN(
+          "hdAnari: render setting '%s' could not be forwarded to ANARI "
+          "renderer parameter of type %s",
           param.name.c_str(),
           anari::toString(param.type));
     }
@@ -354,25 +355,32 @@ bool HdAnariRenderPass::_UpdateProgress()
   auto d = _renderParam->GetANARIDevice();
 
   int numSamples = 0;
-  const bool hasNumSamples = anari::getProperty(
-      d, _anari.frame, "numSamples", numSamples, ANARI_WAIT);
+  const bool hasNumSamples =
+      anari::getProperty(d, _anari.frame, "numSamples", numSamples, ANARI_WAIT);
 
   // The accumulation bound is the renderer's introspected "sampleLimit"
-  // parameter, when it advertises one. Devices without it converge in a single
-  // pass (sampleLimit stays 0 and a finished frame counts as complete).
+  // parameter, when it advertises one. Cast rather than IsHolding<int> so an
+  // int32/uint32/int64-typed parameter is honored, not silently treated as 0.
   static const TfToken sampleLimitToken("sampleLimit");
   HdRenderDelegate *renderDelegate = GetRenderIndex()->GetRenderDelegate();
   const VtValue sp = renderDelegate->GetRenderSetting(sampleLimitToken);
-  const int sampleLimit = sp.IsHolding<int>() ? sp.UncheckedGet<int>() : 0;
+  const int sampleLimit =
+      sp.CanCast<int>() ? VtValue::Cast<int>(sp).UncheckedGet<int>() : 0;
 
   // Devices that don't report sample progress render a complete frame in a
   // single pass, so a finished frame is already fully converged.
   const int completedSamples = hasNumSamples ? numSamples : sampleLimit;
   _renderParam->SetProgress(completedSamples, sampleLimit);
 
+  // No per-sample progress reported: a finished frame is fully converged.
   if (!hasNumSamples)
     return true;
-  return sampleLimit > 0 && numSamples >= sampleLimit;
+  // Progress is reported but no usable sample limit is advertised: treat a
+  // finished frame as converged instead of re-rendering forever (which would
+  // prevent usdrecord from ever terminating).
+  if (sampleLimit <= 0)
+    return true;
+  return numSamples >= sampleLimit;
 }
 
 void HdAnariRenderPass::_WriteAovs(
