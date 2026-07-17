@@ -21,6 +21,7 @@
 #include <anari/anari_cpp.hpp>
 
 #include <map>
+#include <set>
 #include <string>
 
 namespace mx = MaterialX;
@@ -136,12 +137,19 @@ HdAnariMaterialXMaterial::SyncMaterialParameters(anari::Device device,
       || !textureInputs)
     return samplers;
 
-  // hdMtlx names MaterialX nodes after the leaf of the Hydra SdfPath
-  // (HdMtlxCreateNameFromPath == SdfPath::GetName() in a standard USD build), so
-  // match a device-reported path's node leaf back to its Hydra texture node.
-  std::map<std::string, SdfPath> hdNodeByLeaf;
-  for (const SdfPath &p : texData.hdTextureNodes)
-    hdNodeByLeaf[p.GetName()] = p;
+  // hdMtlx names each MaterialX node with HdMtlxCreateNameFromPath(hdPath) --
+  // the Hydra leaf in a standard build, the full '/'->'_' path under
+  // PXR_DCC_LOCATION_ENV_VAR. Key on that same function so the match holds for
+  // both. Two Hydra nodes can still collapse to one name (same leaf in
+  // different nodegraphs); those are inherently unresolvable from the device
+  // path alone, so record them and skip rather than misbind the wrong texture.
+  std::map<std::string, SdfPath> hdNodeByMtlxName;
+  std::set<std::string> ambiguousNames;
+  for (const SdfPath &p : texData.hdTextureNodes) {
+    const std::string name = HdMtlxCreateNameFromPath(p);
+    if (!hdNodeByMtlxName.emplace(name, p).second)
+      ambiguousNames.insert(name);
+  }
 
   for (const char **it = textureInputs; *it; ++it) {
     const std::string origin = *it; // e.g. "img1/file" or "NG_xxx/img1/file"
@@ -149,10 +157,19 @@ HdAnariMaterialXMaterial::SyncMaterialParameters(anari::Device device,
     if (inputSlash == std::string::npos)
       continue;
     const std::string nodePath = origin.substr(0, inputSlash);
-    const std::string nodeLeaf = nodePath.substr(nodePath.find_last_of('/') + 1);
+    const std::string nodeName = nodePath.substr(nodePath.find_last_of('/') + 1);
 
-    const auto found = hdNodeByLeaf.find(nodeLeaf);
-    if (found == hdNodeByLeaf.end()) {
+    if (ambiguousNames.count(nodeName)) {
+      TF_WARN("MaterialX %s: texture input '%s' maps to an ambiguous node name "
+              "'%s' (shared by multiple Hydra texture nodes); skipping",
+          materialNetworkIface.GetMaterialPrimPath().GetText(),
+          origin.c_str(),
+          nodeName.c_str());
+      continue;
+    }
+
+    const auto found = hdNodeByMtlxName.find(nodeName);
+    if (found == hdNodeByMtlxName.end()) {
       TF_WARN("MaterialX %s: texture input '%s' has no matching Hydra node",
           materialNetworkIface.GetMaterialPrimPath().GetText(), origin.c_str());
       continue;

@@ -105,7 +105,21 @@ VtValue _RefineTyped(const Far::TopologyRefiner &refiner,
   if (v.IsHolding<VtFloatArray>())
     return VtValue(
         _RefineArray(refiner, level, mode, v.UncheckedGet<VtFloatArray>()));
-  // Unsupported element type (e.g. double vecs, integer ids): drop it.
+  // Double-precision variants: texcoords in particular can be authored double
+  // (see _FlipTextureCoordinateV), so refine them rather than drop.
+  if (v.IsHolding<VtVec3dArray>())
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtVec3dArray>()));
+  if (v.IsHolding<VtVec2dArray>())
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtVec2dArray>()));
+  if (v.IsHolding<VtVec4dArray>())
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtVec4dArray>()));
+  if (v.IsHolding<VtDoubleArray>())
+    return VtValue(
+        _RefineArray(refiner, level, mode, v.UncheckedGet<VtDoubleArray>()));
+  // Unsupported element type (e.g. integer ids): drop it.
   // Returning the coarse array unchanged would bind a vertex/varying attribute
   // shorter than the refined vertex count and read out of bounds at render
   // time.
