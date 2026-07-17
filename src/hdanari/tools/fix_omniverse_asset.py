@@ -224,29 +224,59 @@ def _resolve_asset(attr, rel_path):
     return None
 
 
+def _normalize_asset(attr, value):
+    """Return a resolved Sdf.AssetPath for a backslash-authored path, else None."""
+    if not isinstance(value, Sdf.AssetPath) or "\\" not in value.path:
+        return None
+    resolved = _resolve_asset(attr, value.path.replace("\\", "/"))
+    return Sdf.AssetPath(resolved) if resolved else None
+
+
 def normalize_asset_paths(stage):
-    """Rewrite Windows-style backslash asset paths to resolved absolute paths."""
+    """Rewrite Windows-style backslash asset paths to resolved absolute paths.
+
+    Handles both scalar ``asset`` and array-valued ``asset[]`` (e.g. UDIM tile
+    sets) attributes."""
     fixed = []
     for prim in stage.Traverse():
         for attr in prim.GetAttributes():
-            if attr.GetTypeName() != Sdf.ValueTypeNames.Asset:
-                continue
-            value = attr.Get()
-            if not isinstance(value, Sdf.AssetPath) or "\\" not in value.path:
-                continue
-            resolved = _resolve_asset(attr, value.path.replace("\\", "/"))
-            if resolved:
-                attr.Set(Sdf.AssetPath(resolved))
-                fixed.append("%s.%s" % (prim.GetPath(), attr.GetName()))
+            type_name = attr.GetTypeName()
+            if type_name == Sdf.ValueTypeNames.Asset:
+                normalized = _normalize_asset(attr, attr.Get())
+                if normalized is not None:
+                    attr.Set(normalized)
+                    fixed.append("%s.%s" % (prim.GetPath(), attr.GetName()))
+            elif type_name == Sdf.ValueTypeNames.AssetArray:
+                items = attr.Get()
+                if not items:
+                    continue
+                changed = False
+                out = []
+                for item in items:
+                    normalized = _normalize_asset(attr, item)
+                    out.append(normalized if normalized is not None else item)
+                    changed = changed or normalized is not None
+                if changed:
+                    attr.Set(Sdf.AssetPathArray(out))
+                    fixed.append("%s.%s" % (prim.GetPath(), attr.GetName()))
     return fixed
 
 
 def _make_overlay(input_path, output_path):
+    if os.path.abspath(output_path) == os.path.abspath(input_path):
+        sys.exit(
+            "error: output '%s' must differ from input; the overlay would "
+            "clobber the source" % output_path
+        )
+
     input_layer = Sdf.Layer.FindOrOpen(input_path)
     if not input_layer:
         sys.exit("error: cannot open input layer '%s'" % input_path)
 
-    out_layer = Sdf.Layer.CreateNew(output_path)
+    try:
+        out_layer = Sdf.Layer.CreateNew(output_path)
+    except Exception as e:  # Tf errors: bad output dir, unknown extension, etc.
+        sys.exit("error: cannot create overlay '%s': %s" % (output_path, e))
     sublayer = os.path.relpath(
         os.path.abspath(input_path), os.path.dirname(os.path.abspath(output_path))
     )
@@ -325,7 +355,7 @@ def main():
         )
 
     basename, ext = os.path.splitext(args.input)
-    output = args.output or basename + ".fixed" + ext
+    output = args.output or basename + ".hdanari" + ext
     stage, out_layer = _make_overlay(args.input, output)
 
     if args.up_axis:

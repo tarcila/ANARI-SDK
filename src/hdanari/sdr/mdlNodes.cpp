@@ -283,11 +283,6 @@ SdrShaderPropertyUniquePtrVec MdlFunctionSdrNode::GetShaderProperties(
 {
   SdrShaderPropertyUniquePtrVec properties;
 
-  // handle return type
-  auto returnType =
-      mi::base::make_handle(functionDefinition->get_return_type());
-
-  // Parameters
   auto count = functionDefinition->get_parameter_count();
 
   auto types = mi::base::make_handle(functionDefinition->get_parameter_types());
@@ -313,8 +308,7 @@ SdrShaderPropertyUniquePtrVec MdlFunctionSdrNode::GetShaderProperties(
     // The create* helpers dereference the default expression unconditionally.
     // A parameter may have no default, or a non-constant one -- skip it rather
     // than deref a null handle.
-    auto defaultConstant = mi::base::make_handle(
-        defaultValue
+    auto defaultConstant = mi::base::make_handle(defaultValue
             ? defaultValue
                   ->get_interface<const mi::neuraylib::IExpression_constant>()
             : nullptr);
@@ -333,20 +327,15 @@ SdrShaderPropertyUniquePtrVec MdlFunctionSdrNode::GetShaderProperties(
       auto boolType = mi::base::make_handle(
           type->get_interface<const mi::neuraylib::IType_bool>());
       properties.push_back(
-          createScalarInputProperty<mi::neuraylib::IValue_bool>(name,
-              boolType.get(),
-              defaultConstant.get(),
-              &annotationWrapper));
+          createScalarInputProperty<mi::neuraylib::IValue_bool>(
+              name, boolType.get(), defaultConstant.get(), &annotationWrapper));
       break;
     }
     case mi::neuraylib::IType::TK_INT: {
       auto intType = mi::base::make_handle(
           type->get_interface<const mi::neuraylib::IType_int>());
-      properties.push_back(
-          createScalarInputProperty<mi::neuraylib::IValue_int>(name,
-              intType.get(),
-              defaultConstant.get(),
-              &annotationWrapper));
+      properties.push_back(createScalarInputProperty<mi::neuraylib::IValue_int>(
+          name, intType.get(), defaultConstant.get(), &annotationWrapper));
       break;
     }
     case mi::neuraylib::IType::TK_FLOAT: {
