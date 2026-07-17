@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include "anariTypes.h"
 #include "debugCodes.h"
 #include "geometry.h"
-#include "anariTypes.h"
 #include "light.h"
 #include "material.h"
 #include "materialTokens.h"
@@ -49,7 +49,8 @@ class HdAnariRenderParam final : public HdRenderParam
 {
  public:
   HdAnariRenderParam(anari::Device device,
-      HdAnariMaterial::MaterialType materialType = HdAnariMaterial::MaterialType::PhysicallyBased);
+      HdAnariMaterial::MaterialType materialType =
+          HdAnariMaterial::MaterialType::PhysicallyBased);
   ~HdAnariRenderParam() override;
 
   anari::Device GetANARIDevice() const;
@@ -89,7 +90,8 @@ class HdAnariRenderParam final : public HdRenderParam
  private:
   anari::Device _device{nullptr};
   anari::Material _material{nullptr};
-  HdAnariMaterial::MaterialType _materialType{HdAnariMaterial::MaterialType::Matte};
+  HdAnariMaterial::MaterialType _materialType{
+      HdAnariMaterial::MaterialType::Matte};
   HdAnariMaterial::PrimvarBinding _primvarBinding;
 
   struct MdlMaterialCacheEntry
@@ -146,8 +148,12 @@ inline anari::Material HdAnariRenderParam::AcquireMdlMaterial(
 {
   std::lock_guard<std::mutex> guard(_mdlMaterialMutex);
   auto it = _mdlMaterialCache.find(key);
-  if (it == cend(_mdlMaterialCache))
-    it = _mdlMaterialCache.insert({key, {create(), 0}}).first;
+  if (it == cend(_mdlMaterialCache)) {
+    auto material = create();
+    if (!material)
+      return nullptr; // don't cache a failed creation and poison this key
+    it = _mdlMaterialCache.insert({key, {material, 0}}).first;
+  }
   ++it->second.refCount;
   return it->second.material;
 }
@@ -156,7 +162,7 @@ inline void HdAnariRenderParam::ReleaseMdlMaterial(const std::string &key)
 {
   std::lock_guard<std::mutex> guard(_mdlMaterialMutex);
   auto it = _mdlMaterialCache.find(key);
-  if (it == cend(_mdlMaterialCache))
+  if (it == cend(_mdlMaterialCache) || it->second.refCount == 0)
     return;
   if (--it->second.refCount == 0) {
     anari::release(_device, it->second.material);
