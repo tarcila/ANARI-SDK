@@ -77,9 +77,22 @@ std::string HdAnariMdlMaterial::ComputeContentKey(
       inputName = cnxs.front().upstreamOutputName;
     }
 
+    auto value =
+        materialNetworkIface.GetNodeParameterValue(nodeName, inputName);
     std::ostringstream entry;
-    entry << name.GetString() << '='
-          << materialNetworkIface.GetNodeParameterValue(nodeName, inputName);
+    entry << name.GetString() << '=';
+    // Key on the resolved asset path, the same value ProcessMdlNode forwards to
+    // the device. Two prims sharing an unresolved path but resolving to
+    // different files must not collide onto one shared material.
+    if (value.IsHolding<SdfAssetPath>()) {
+      auto ap = value.UncheckedGet<SdfAssetPath>();
+      auto path = ap.GetResolvedPath();
+      if (path.empty())
+        path = ap.GetAssetPath();
+      entry << path;
+    } else {
+      entry << value;
+    }
     params.push_back(entry.str());
   }
   std::sort(begin(params), end(params));
@@ -101,7 +114,7 @@ void HdAnariMdlMaterial::SyncMaterialParameters(anari::Device device,
     auto terminalNode = con.second.upstreamNodeName;
     auto terminalNodeType = materialNetworkIface.GetNodeType(terminalNode);
 
-  ProcessMdlNode(device,
+    ProcessMdlNode(device,
         material,
         materialNetworkIface,
         terminalNode,
@@ -230,7 +243,8 @@ void HdAnariMdlMaterial::ProcessMdlNode(anari::Device device,
       }
     } else {
       TF_WARN("Don't know how to handle %s of type %s",
-          name.GetText(), value.GetTypeName().c_str());
+          name.GetText(),
+          value.GetTypeName().c_str());
     }
   }
 }

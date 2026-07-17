@@ -172,7 +172,8 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     auto materialNetworkIface =
         HdMaterialNetwork2Interface(GetId(), &materialNetwork2_);
 
-    auto surfaceTerminalConnection = materialNetworkIface.GetTerminalConnection(HdMaterialTerminalTokens->surface);
+    auto surfaceTerminalConnection = materialNetworkIface.GetTerminalConnection(
+        HdMaterialTerminalTokens->surface);
     if (!surfaceTerminalConnection.first) {
       // A material network with no surface terminal is valid (e.g. physics-only
       // materials); fall back to the shared default without taking ownership.
@@ -183,8 +184,10 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
       return;
     }
 
-    // Try and guess the appropriate implementation for the surface terminal type
-    auto terminalType = materialNetworkIface.GetNodeType(surfaceTerminalConnection.second.upstreamNodeName);
+    // Try and guess the appropriate implementation for the surface terminal
+    // type
+    auto terminalType = materialNetworkIface.GetNodeType(
+        surfaceTerminalConnection.second.upstreamNodeName);
     // Assume Matte is a safe fallback.
     materialType_ = MaterialType::Matte;
 #ifdef HDANARI_ENABLE_MDL
@@ -192,7 +195,7 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
       materialType_ = MaterialType::Mdl;
     } else
 #endif
-    if (terminalType == HdAnariMaterialTokens->UsdPreviewSurface) {
+        if (terminalType == HdAnariMaterialTokens->UsdPreviewSurface) {
       materialType_ = hdAnariRenderParam->GetMaterialType();
     }
 
@@ -239,7 +242,13 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     attributes_ = BuildPrimvarBinding(primvars_);
   }
 
-  if (*dirtyBits & HdMaterial::DirtyParams) {
+  // MDL materials are (re)acquired from the shared cache here. A DirtyResource
+  // sync that arrives without DirtyParams has just cleared material_, so force
+  // this pass in that case too — otherwise the material stays null until the
+  // next params-dirty sync.
+  const bool needsMdlAcquire =
+      materialType_ == MaterialType::Mdl && material_ == nullptr;
+  if ((*dirtyBits & HdMaterial::DirtyParams) || needsMdlAcquire) {
     auto materialNetworkIface =
         HdMaterialNetwork2Interface(GetId(), &materialNetwork2_);
 
@@ -279,8 +288,12 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
         material_ = hdAnariRenderParam->AcquireMdlMaterial(key, [&]() {
           auto m =
               HdAnariMdlMaterial::CreateMaterial(device_, materialNetworkIface);
-          HdAnariMdlMaterial::SyncMaterialParameters(
-              device_, m, materialNetworkIface, attributes_, primvars_, samplers_);
+          HdAnariMdlMaterial::SyncMaterialParameters(device_,
+              m,
+              materialNetworkIface,
+              attributes_,
+              primvars_,
+              samplers_);
           anari::commitParameters(device_, m);
           return m;
         });
