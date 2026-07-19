@@ -21,6 +21,7 @@
 #include <anari/anari_cpp.hpp>
 
 #include <map>
+#include <set>
 #include <string>
 
 namespace mx = MaterialX;
@@ -88,8 +89,12 @@ anari::Material HdAnariMaterialXMaterial::CreateMaterial(anari::Device device)
 HdAnariMaterial::PrimvarMapping HdAnariMaterialXMaterial::EnumeratePrimvars(
     const HdMaterialNetwork2Interface &materialNetworkIface, TfToken)
 {
-  // Map the mesh's `st` to attribute0, matching the MDL backend. Refined later
-  // if MaterialX networks reference non-default texcoord sets.
+  // The generated MDL reads the default texture coordinate set as
+  // state::texture_coordinate(0) == ANARI attribute0. Request `st`; geometry
+  // resolves this to the mesh's actual texture-coordinate primvar when it is
+  // named otherwise (e.g. Blender's `UVMap`). Named MaterialX geompropvalue
+  // sets compile to MDL parameters (not texcoord reads) and need device support
+  // -- see materialx.h.
   return {{materialNetworkIface.GetMaterialPrimPath(), TfToken("st")}};
 }
 
@@ -133,15 +138,23 @@ HdAnariMaterialXMaterial::SyncMaterialParameters(anari::Device device,
   const char **textureInputs = nullptr;
   if (!anari::getProperty(
           device, material, "textureInputs", textureInputs, ANARI_WAIT)
-      || !textureInputs)
+      || !textureInputs) {
     return samplers;
+  }
 
-  // hdMtlx names MaterialX nodes after the leaf of the Hydra SdfPath
-  // (HdMtlxCreateNameFromPath == SdfPath::GetName() in a standard USD build), so
-  // match a device-reported path's node leaf back to its Hydra texture node.
-  std::map<std::string, SdfPath> hdNodeByLeaf;
-  for (const SdfPath &p : texData.hdTextureNodes)
-    hdNodeByLeaf[p.GetName()] = p;
+  // hdMtlx names each MaterialX node with HdMtlxCreateNameFromPath(hdPath) --
+  // the Hydra leaf in a standard build, the full '/'->'_' path under
+  // PXR_DCC_LOCATION_ENV_VAR. Key on that same function so the match holds for
+  // both. Two Hydra nodes can still collapse to one name (same leaf in
+  // different nodegraphs); those are inherently unresolvable from the device
+  // path alone, so record them and skip rather than misbind the wrong texture.
+  std::map<std::string, SdfPath> hdNodeByMtlxName;
+  std::set<std::string> ambiguousNames;
+  for (const SdfPath &p : texData.hdTextureNodes) {
+    const std::string name = HdMtlxCreateNameFromPath(p);
+    if (!hdNodeByMtlxName.emplace(name, p).second)
+      ambiguousNames.insert(name);
+  }
 
   for (const char **it = textureInputs; *it; ++it) {
     const std::string origin = *it; // e.g. "img1/file" or "NG_xxx/img1/file"
@@ -149,10 +162,19 @@ HdAnariMaterialXMaterial::SyncMaterialParameters(anari::Device device,
     if (inputSlash == std::string::npos)
       continue;
     const std::string nodePath = origin.substr(0, inputSlash);
-    const std::string nodeLeaf = nodePath.substr(nodePath.find_last_of('/') + 1);
+    const std::string nodeName = nodePath.substr(nodePath.find_last_of('/') + 1);
 
-    const auto found = hdNodeByLeaf.find(nodeLeaf);
-    if (found == hdNodeByLeaf.end()) {
+    if (ambiguousNames.count(nodeName)) {
+      TF_WARN("MaterialX %s: texture input '%s' maps to an ambiguous node name "
+              "'%s' (shared by multiple Hydra texture nodes); skipping",
+          materialNetworkIface.GetMaterialPrimPath().GetText(),
+          origin.c_str(),
+          nodeName.c_str());
+      continue;
+    }
+
+    const auto found = hdNodeByMtlxName.find(nodeName);
+    if (found == hdNodeByMtlxName.end()) {
       TF_WARN("MaterialX %s: texture input '%s' has no matching Hydra node",
           materialNetworkIface.GetMaterialPrimPath().GetText(), origin.c_str());
       continue;

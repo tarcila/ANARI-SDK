@@ -44,7 +44,9 @@
 #include <array>
 #include <cstdio>
 #include <iterator>
+#include <mutex>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -211,13 +213,20 @@ void HdAnariMaterial::Sync(HdSceneDelegate *sceneDelegate,
     // otherwise leave the Matte fallback in place.
     if (SdrRegistry::GetInstance().GetShaderNodeByIdentifierAndType(
             terminalType, HdAnariMaterialTokens->mtlx)) {
-      if (hdAnariRenderParam->SupportsMaterialX())
+      if (hdAnariRenderParam->SupportsMaterialX()) {
         materialType_ = MaterialType::MaterialX;
-      else
-        TF_WARN(
-            "MaterialX material %s: device lacks the 'materialx' subtype; "
-            "falling back to the default material",
-            GetId().GetText());
+      } else {
+        // DirtyResource re-fires every frame on varying materials; warn once
+        // per material id so the fallback doesn't flood the log.
+        static std::mutex warnedMutex;
+        static std::unordered_set<std::string> warned;
+        std::lock_guard<std::mutex> warnedGuard(warnedMutex);
+        if (warned.insert(GetId().GetString()).second)
+          TF_WARN(
+              "MaterialX material %s: device lacks the 'materialx' subtype; "
+              "falling back to the default material",
+              GetId().GetText());
+      }
     }
 #endif
 
