@@ -30,6 +30,7 @@
 #include <pxr/imaging/hd/tokens.h>
 #include <pxr/imaging/hd/types.h>
 #include <pxr/imaging/hd/vtBufferSource.h>
+#include <pxr/imaging/pxOsd/tokens.h>
 // std
 #include <cassert>
 #include <iterator>
@@ -41,6 +42,14 @@
 using namespace std::string_literals;
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+// Minimum subdivision level applied to subdivision-scheme meshes when the USD
+// display style requests none (default complexity maps to refineLevel 0). USD
+// implicit surfaces are emitted as coarse catmullClark control cages; without a
+// floor they render faceted (visible as triangular specular artifacts) whereas
+// RenderMan renders the smooth limit surface regardless of complexity. Chosen
+// so a coarse implicit-sphere cage reads as smooth.
+static constexpr int kDefaultSubdivRefineLevel = 3;
 
 // HdAnariPoints definitions
 // ////////////////////////////////////////////////////
@@ -76,7 +85,13 @@ void HdAnariMesh::Sync(HdSceneDelegate *sceneDelegate,
     // coarse topology. Refinement clears the subdivision scheme, so the result
     // is treated as a plain polygonal mesh from here on.
     const HdMeshTopology coarseTopology(GetMeshTopology(sceneDelegate), 0);
-    const int refineLevel = sceneDelegate->GetDisplayStyle(GetId()).refineLevel;
+    // Honor the complexity-derived refine level, but floor subdivision-scheme
+    // meshes to a smooth default when complexity requests none, so implicit
+    // surfaces match RenderMan's limit surface at default complexity.
+    int refineLevel = sceneDelegate->GetDisplayStyle(GetId()).refineLevel;
+    if (refineLevel <= 0
+        && coarseTopology.GetScheme() != PxOsdOpenSubdivTokens->none)
+      refineLevel = kDefaultSubdivRefineLevel;
     subdivision_ = HdAnariSubdivision::Create(coarseTopology, refineLevel);
     topology_ = subdivision_ ? subdivision_->refinedTopology() : coarseTopology;
     meshUtil_ = std::make_unique<HdAnariMeshUtil>(&topology_, GetId());
