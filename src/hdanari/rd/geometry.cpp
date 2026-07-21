@@ -311,6 +311,10 @@ void HdAnariGeometry::SyncAnariGeometry(anari::Device device,
 
     switch (interpolation) {
     case HdInterpolationConstant: {
+      // UpdatePrimvarSource yields monostate on drop/error paths; skip rather
+      // than std::get the wrong alternative.
+      if (!std::holds_alternative<GfVec4f>(primvarSourceIt->second))
+        break;
       anari::setParameter(device,
           geometry,
           bindingPoint.GetText(),
@@ -321,6 +325,8 @@ void HdAnariGeometry::SyncAnariGeometry(anari::Device device,
     case HdInterpolationVarying:
     case HdInterpolationVertex:
     case HdInterpolationUniform: {
+      if (!std::holds_alternative<anari::Array1D>(primvarSourceIt->second))
+        break;
       bindingPoint = _GetBindingPoint(bindingPoint, interpolation);
       anari::setParameter(device,
           geometry,
@@ -396,6 +402,8 @@ void HdAnariGeometry::SyncAnariInstance(anari::Device device,
 
     switch (interpolation) {
     case HdInterpolationInstance: {
+      if (!std::holds_alternative<anari::Array1D>(primvarSourceIt->second))
+        break;
       anari::setParameter(device,
           instance,
           bindingPoint.GetText(),
